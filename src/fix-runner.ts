@@ -74,7 +74,7 @@ async function runRepairLoop(issue: IssueSnapshot, triage: TriageResult, inputs:
     core.info(`Starting repair attempt ${attempt}/${maxAttempts}`);
     await runPi({
       inputs,
-      tools: ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'],
+      tools: ['read', 'grep', 'find', 'ls', 'edit', 'write'],
       prompt: attempt === 1 ? formatFixPrompt(issue, triage) : formatRepairFeedbackPrompt(issue, triage, attempt, failureSummary),
       requireText: false,
     });

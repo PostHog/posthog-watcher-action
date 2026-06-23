@@ -81,7 +81,7 @@ PR body:
 ${pr.body ?? '(empty)'}
 \`\`\``;
 
-  await runPi({ inputs, tools: ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'], prompt, requireText: false });
+  await runPi({ inputs, tools: ['read', 'grep', 'find', 'ls', 'edit', 'write'], prompt, requireText: false });
 
   if (inputs.validationCommand) await runShell(inputs.validationCommand, process.cwd());
 

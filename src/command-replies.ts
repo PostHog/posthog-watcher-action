@@ -2,6 +2,7 @@ import * as github from '@actions/github';
 import { findOpenPullRequestForBranch, type Octokit, upsertIssueComment } from './github.js';
 import type { ActionInputs } from './inputs.js';
 import { runPi } from './pi-runner.js';
+import { redactSecrets } from './redact.js';
 import { assessIssueSecurity } from './security.js';
 
 export async function replyToCommand(octokit: Octokit, issueNumber: number, inputs: ActionInputs, command: string): Promise<{ conclusion: string; commentUrl: string }> {
@@ -43,6 +44,7 @@ export async function replyToCommand(octokit: Octokit, issueNumber: number, inpu
     }
   }
 
+  body = redactSecrets(body, [inputs.openaiApiKey, inputs.githubToken]);
   const commentUrl = inputs.dryRun ? '' : await upsertIssueComment(octokit, issueNumber, marker, body);
   return { conclusion: `${command} replied`, commentUrl };
 }

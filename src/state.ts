@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import type { Octokit } from './github.js';
 import type { ActionInputs } from './inputs.js';
+import { redactJson, redactSecrets } from './redact.js';
 
 export interface StateRecord {
   kind: 'issue' | 'pr' | 'commit' | 'sweep';
@@ -35,7 +36,7 @@ export async function writeStateRecord(octokit: Octokit, inputs: ActionInputs, r
   const { owner, repo } = stateRepository(inputs);
   await ensureBranch(octokit, owner, repo, inputs.stateBranch);
   const path = `records/${record.owner}-${record.repo}/${record.kind}s/${record.numberOrSha}.md`;
-  const body = renderRecord(record);
+  const body = renderRecord(record, inputs);
   await upsertFile(octokit, owner, repo, inputs.stateBranch, path, body, `Update watcher state for ${record.kind} ${record.numberOrSha}`);
 
   const index = await readIndex(octokit, owner, repo, inputs.stateBranch);
@@ -122,8 +123,10 @@ async function upsertFile(octokit: Octokit, owner: string, repo: string, branch:
   }
 }
 
-function renderRecord(record: StateRecord): string {
-  return `# ${record.kind} ${record.numberOrSha}: ${record.title}\n\n- Repo: ${record.owner}/${record.repo}\n- URL: ${record.url}\n- Conclusion: ${record.conclusion}\n- Labels: ${record.labels.join(', ') || '(none)'}\n- PR: ${record.prUrl || '(none)'}\n- Closed: ${record.closed ? 'yes' : 'no'}\n- Run: ${runUrl()}\n- Updated: ${new Date().toISOString()}\n\n\`\`\`json\n${JSON.stringify(record.data, null, 2)}\n\`\`\`\n`;
+function renderRecord(record: StateRecord, inputs: ActionInputs): string {
+  const secrets = [inputs.openaiApiKey, inputs.githubToken];
+  const data = redactJson(record.data, secrets);
+  return `# ${record.kind} ${record.numberOrSha}: ${redactSecrets(record.title, secrets)}\n\n- Repo: ${record.owner}/${record.repo}\n- URL: ${record.url}\n- Conclusion: ${redactSecrets(record.conclusion, secrets)}\n- Labels: ${record.labels.join(', ') || '(none)'}\n- PR: ${record.prUrl || '(none)'}\n- Closed: ${record.closed ? 'yes' : 'no'}\n- Run: ${runUrl()}\n- Updated: ${new Date().toISOString()}\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n`;
 }
 
 function toDashboardEntry(record: StateRecord): DashboardEntry {

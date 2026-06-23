@@ -64,7 +64,7 @@ export function getInputs(): ActionInputs {
     sweepQuery: core.getInput('sweep-query') || 'is:issue is:open archived:false',
     maxPiCalls: parsePositiveInt(core.getInput('max-pi-calls') || '4', 'max-pi-calls'),
     piTimeoutMs: parsePositiveInt(core.getInput('pi-timeout-ms') || '600000', 'pi-timeout-ms'),
-    approveProjectResources: parseBoolean(core.getInput('approve-project-resources') || 'true'),
+    approveProjectResources: parseBoolean(core.getInput('approve-project-resources')),
     stateEnabled: parseBoolean(core.getInput('state-enabled')),
     stateRepo: core.getInput('state-repo'),
     stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',

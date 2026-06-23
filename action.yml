@@ -105,7 +105,7 @@ inputs:
   approve-project-resources:
     description: Pass --approve to pi so host repository AGENTS.md, .pi, and .agents resources can be trusted in CI
     required: false
-    default: 'true'
+    default: 'false'
   state-enabled:
     description: Whether to write durable markdown state records and dashboard to state-branch
     required: false

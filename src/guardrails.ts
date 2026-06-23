@@ -19,6 +19,9 @@ export function checkDiffGuardrails(stats: DiffStats, options: GuardrailOptions)
     if (file.startsWith('.github/workflows/')) failures.push(`workflow file changed: ${file}`);
     if (/(^|\/)package-lock\.json$|(^|\/)pnpm-lock\.yaml$|(^|\/)yarn\.lock$/.test(file)) failures.push(`lockfile changed: ${file}`);
     if (/\.min\.(js|css)$/.test(file)) failures.push(`minified file changed: ${file}`);
+    if (/(^|\/)\.env(\.|$)/.test(file)) failures.push(`environment file changed: ${file}`);
+    if (/(^|\/)(\.npmrc|\.pypirc|\.netrc|id_rsa|id_ed25519)$/.test(file)) failures.push(`credential file changed: ${file}`);
+    if (/(secret|credential|token|private[-_]?key)/i.test(file)) failures.push(`secret-like path changed: ${file}`);
   }
 
   return failures;

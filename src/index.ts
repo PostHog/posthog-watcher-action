@@ -14,6 +14,7 @@ import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
 import { filterAllowedLabels } from './labels.js';
 import { getPiCallCount, resetPiCallCount } from './pi-budget.js';
 import { runPi } from './pi-runner.js';
+import { redactSecrets } from './redact.js';
 import { repairPullRequest } from './pr-repair-runner.js';
 import { getRelatedContext } from './related.js';
 import { assessIssueSecurity } from './security.js';
@@ -141,7 +142,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
       for (const label of staleLabels) await removeLabel(octokit, issue.number, label);
       await addLabels(octokit, issue.number, managedLabels);
     }
-    const commentBody = buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons, snapshotHash);
+    const commentBody = redactSecrets(buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons, snapshotHash), [inputs.openaiApiKey, inputs.githubToken]);
     const commentUrl = inputs.dryRun ? '' : await upsertIssueComment(octokit, issue.number, inputs.commentMarker, commentBody);
     await writeStateRecord(octokit, inputs, {
       kind: 'issue',
@@ -205,7 +206,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     }
   }
 
-  const commentBody = buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash);
+  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash), [inputs.openaiApiKey, inputs.githubToken]);
   let commentUrl = '';
   if (inputs.dryRun) {
     core.info(`[dry-run] Would upsert issue comment:\n${commentBody}`);
