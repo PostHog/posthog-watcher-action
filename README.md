@@ -45,6 +45,11 @@ permissions:
   issues: write # add/sync labels, update marker-backed issue comment, optional close
   pull-requests: write # open draft fix PRs
 
+# Recommended when state-enabled is true: serialize watcher runs so state writes don't race.
+concurrency:
+  group: posthog-watcher-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   watcher:
     runs-on: ubuntu-latest
@@ -215,6 +220,14 @@ A sample scheduled/manual workflow lives in `.github/workflows/sweep.yml`.
 ## Durable state and dashboard
 
 When `state-enabled: 'true'`, the action writes markdown records, `index.json`, and a generated `dashboard.md` to `state-branch` in `state-repo` or the current repository. The branch is created from the repository default branch if missing. State writes retry on branch/file conflicts and preserve up to 200 dashboard entries.
+
+Because GitHub Contents API writes can still race when multiple workflow runs update the same state branch at the same time, host repositories should serialize watcher runs with workflow-level concurrency:
+
+```yaml
+concurrency:
+  group: posthog-watcher-${{ github.repository }}
+  cancel-in-progress: false
+```
 
 ## Commit reviews
 

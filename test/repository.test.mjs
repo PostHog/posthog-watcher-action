@@ -82,6 +82,8 @@ test('new MVP features are documented', () => {
   assert.match(readme, /GitHub token options/);
   assert.match(readme, /Fine-grained PAT/);
   assert.match(readme, /GitHub App installation token/);
+  assert.match(readme, /posthog-watcher-\$\{\{ github\.repository \}\}/);
+  assert.match(readme, /cancel-in-progress: false/);
   assert.match(readme, /max-comments/);
   assert.match(readme, /max-changed-files/);
   assert.match(readme, /comment-marker/);

@@ -11,8 +11,8 @@ on:
     - cron: '17 8 * * 1'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: posthog-watcher-${{ github.repository }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
