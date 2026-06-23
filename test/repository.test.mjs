@@ -50,6 +50,13 @@ test('new MVP features are documented', () => {
   assert.match(readme, /never closes issues/);
 });
 
+test('pi JSON output parser falls back to final assistant messages', () => {
+  const source = read('src/pi-runner.ts');
+  assert.match(source, /event\.type === 'message_end'/);
+  assert.match(source, /event\.type === 'agent_end'/);
+  assert.match(source, /formatPiDiagnostics/);
+});
+
 test('workflow actions are pinned to full-length SHAs', () => {
   const workflows = [read('.github/workflows/ci.yml'), read('.github/workflows/commit-review.yml'), read('.github/actions/setup/action.yml')].join('\n');
   assert.doesNotMatch(workflows, /uses:\s+[^\s]+@v\d/);

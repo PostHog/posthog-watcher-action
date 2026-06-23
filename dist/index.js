@@ -24038,8 +24038,7 @@ async function runPi(options) {
   if (result.stderr.trim()) debug(result.stderr.trim());
   const text = collectAssistantText(result.stdout);
   if (!text.trim()) {
-    throw new Error(`pi returned no assistant text. Raw output:
-${result.stdout.slice(0, 4e3)}`);
+    throw new Error(`pi returned no assistant text.${formatPiDiagnostics(result.stdout, result.stderr)}`);
   }
   return text.trim();
 }
@@ -24053,18 +24052,58 @@ function sanitizedEnv(openaiApiKey) {
   return env;
 }
 function collectAssistantText(stdout) {
-  let text = "";
+  let streamingText = "";
+  let finalAssistantText = "";
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;
     try {
       const event = JSON.parse(line);
       if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta") {
-        text += event.assistantMessageEvent.delta ?? "";
+        streamingText += event.assistantMessageEvent.delta ?? "";
+      }
+      if (event.type === "message_end" && event.message?.role === "assistant") {
+        finalAssistantText = extractMessageText(event.message);
+      }
+      if (event.type === "agent_end" && event.messages) {
+        const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+        if (lastAssistant) finalAssistantText = extractMessageText(lastAssistant);
       }
     } catch {
     }
   }
-  return text;
+  return streamingText.trim() ? streamingText : finalAssistantText;
+}
+function extractMessageText(message) {
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return "";
+  return message.content.map((part) => part.type === "text" ? part.text ?? "" : "").join("");
+}
+function formatPiDiagnostics(stdout, stderr) {
+  const errors = collectPiErrors(stdout);
+  const sections = [];
+  if (errors.length) sections.push(`pi errors:
+${errors.join("\n")}`);
+  if (stderr.trim()) sections.push(`stderr:
+${stderr.trim().slice(-4e3)}`);
+  sections.push(`raw output tail:
+${stdout.slice(-4e3)}`);
+  return `
+
+${sections.join("\n\n")}`;
+}
+function collectPiErrors(stdout) {
+  const errors = [];
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line);
+      if (event.errorMessage) errors.push(event.errorMessage);
+      if (event.finalError) errors.push(event.finalError);
+      if (event.isError && event.result) errors.push(typeof event.result === "string" ? event.result : JSON.stringify(event.result));
+    } catch {
+    }
+  }
+  return errors;
 }
 
 // src/commit-review.ts
