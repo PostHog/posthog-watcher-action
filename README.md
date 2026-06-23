@@ -49,7 +49,7 @@ jobs:
   watcher:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - uses: PostHog/posthog-watcher-action@v0
         with:
@@ -61,6 +61,61 @@ jobs:
 ```
 
 For PR creation with `${{ secrets.GITHUB_TOKEN }}`, the target repository must also enable **Settings → Actions → General → Workflow permissions → Read and write permissions** and **Allow GitHub Actions to create and approve pull requests**.
+
+## GitHub token options
+
+The `github-token` input can be the default `${{ secrets.GITHUB_TOKEN }}`, a fine-grained PAT, or a GitHub App installation token.
+
+### Default `GITHUB_TOKEN`
+
+Use this for initial testing in the same repository:
+
+```yaml
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+with:
+  github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The repository must allow Actions to create pull requests as described above.
+
+### Fine-grained PAT
+
+Use a PAT when repository/org settings do not allow `GITHUB_TOKEN` to create PRs, or when writing state to a different repository.
+
+Minimum permissions for the target repositories:
+
+- Contents: read/write
+- Issues: read/write
+- Pull requests: read/write
+- Metadata: read
+
+```yaml
+with:
+  github-token: ${{ secrets.POSTHOG_WATCHER_PAT }}
+```
+
+### GitHub App installation token
+
+You can also generate an installation token before running the action:
+
+```yaml
+- uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+  id: app-token
+  with:
+    app-id: ${{ secrets.POSTHOG_WATCHER_APP_ID }}
+    private-key: ${{ secrets.POSTHOG_WATCHER_APP_PRIVATE_KEY }}
+
+- uses: PostHog/posthog-watcher-action@v0
+  with:
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    github-token: ${{ steps.app-token.outputs.token }}
+```
+
+The GitHub App needs repository permissions for Contents, Issues, Pull requests, and Metadata.
 
 ## Maintainer commands
 
@@ -179,6 +234,9 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `allow-security-ai` | `false` | Allows suspected security-sensitive reports to be sent to pi/OpenAI. |
 | `dry-run` | `false` | Logs intended GitHub mutations without applying them. |
 | `labels` | `bug,documentation,enhancement,question,needs-info,good-first-issue` | Labels `pi` may request. Missing repo labels are ignored. |
+| `max-comments` | `20` | Maximum issue comments to include in context. |
+| `max-changed-files` | `5` | Maximum changed files allowed for generated fixes. |
+| `max-diff-lines` | `500` | Maximum added/deleted diff lines allowed for generated fixes. |
 | `managed-label-prefix` | `posthog-watcher:` | Prefix for labels exclusively managed by this action. |
 | `sync-managed-labels` | `true` | Remove stale labels with the managed prefix only. |
 | `max-repair-attempts` | `2` | Maximum repair attempts before giving up; hard-capped at 3. |
@@ -194,6 +252,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `state-enabled` | `false` | Write durable markdown state records and dashboard. |
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
+| `comment-marker` | `<!-- posthog-watcher-action -->` | Hidden marker used to create/update one durable issue or command comment. |
 | `pi-version` | `0.79.10` | Version of `@earendil-works/pi-coding-agent` invoked with `npx`. |
 
 ## Guardrails

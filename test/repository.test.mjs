@@ -76,6 +76,12 @@ test('new MVP features are documented', () => {
   assert.match(readme, /Related context and close\/apply/);
   assert.match(readme, /Commit reviews/);
   assert.match(readme, /allow-close: true/);
+  assert.match(readme, /GitHub token options/);
+  assert.match(readme, /Fine-grained PAT/);
+  assert.match(readme, /GitHub App installation token/);
+  assert.match(readme, /max-comments/);
+  assert.match(readme, /max-changed-files/);
+  assert.match(readme, /comment-marker/);
 });
 
 test('advanced hardening features are wired', () => {
