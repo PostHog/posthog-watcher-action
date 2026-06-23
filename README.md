@@ -62,7 +62,7 @@ jobs:
 
       - uses: PostHog/posthog-watcher-action@v0
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ inputs['issue-number'] }}
           model: openai/gpt-5.5:high
@@ -121,7 +121,7 @@ You can also generate an installation token before running the action:
 
 - uses: PostHog/posthog-watcher-action@v0
   with:
-    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
     github-token: ${{ steps.app-token.outputs.token }}
 ```
 
@@ -300,7 +300,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: PostHog/posthog-watcher-action@v0
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: drain-queue
           max-queue-items: '5'
