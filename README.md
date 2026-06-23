@@ -45,10 +45,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ inputs['issue-number'] }}
           model: openai/gpt-5.5:high
-          allow-fix: 'false'
+          allow-fix: 'true'
 ```
 
-For the first `posthog-js` trial, keep `allow-fix: 'false'`. Enable fixes later only for manual runs or trusted maintainer commands.
+`allow-fix: 'true'` lets the action open a draft PR only when the issue looks low-risk, does not need more information, and the confidence is at least 75%. Because this is experimental, consider starting with `dry-run: 'true'` when testing on a new repository.
 
 ## Inputs
 
