@@ -5,6 +5,7 @@ import { git, runShell } from './git.js';
 import type { ActionInputs } from './inputs.js';
 import { formatFixPrompt, formatRepairFeedbackPrompt, type IssueSnapshot } from './issue-context.js';
 import { runPi } from './pi-runner.js';
+import { reviewGeneratedDiff } from './review-gate.js';
 import type { TriageResult } from './triage-schema.js';
 
 export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs): Promise<string | undefined> {
@@ -35,6 +36,13 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
 
   const repair = await runRepairLoop(issue, triage, inputs);
   if (!repair) {
+    await git(['checkout', '-']);
+    return undefined;
+  }
+
+  const reviewGate = await reviewGeneratedDiff(inputs);
+  if (!reviewGate.approve) {
+    core.warning(`Skipping PR because independent review gate rejected the diff: ${reviewGate.reason}`);
     await git(['checkout', '-']);
     return undefined;
   }

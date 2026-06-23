@@ -59,6 +59,27 @@ export async function addLabels(octokit: Octokit, issueNumber: number, labels: s
   await octokit.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels });
 }
 
+export async function removeLabel(octokit: Octokit, issueNumber: number, label: string): Promise<void> {
+  const { owner, repo } = github.context.repo;
+  await octokit.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: label }).catch(() => undefined);
+}
+
+export async function closeIssue(octokit: Octokit, issueNumber: number): Promise<void> {
+  const { owner, repo } = github.context.repo;
+  await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'closed' });
+}
+
+export async function searchOpenIssueNumbers(octokit: Octokit, query: string, maxItems: number): Promise<number[]> {
+  const { owner, repo } = github.context.repo;
+  const response = await octokit.rest.search.issuesAndPullRequests({
+    q: `repo:${owner}/${repo} ${query}`,
+    per_page: Math.min(100, maxItems),
+    sort: 'updated',
+    order: 'asc',
+  });
+  return response.data.items.filter((item) => !item.pull_request).slice(0, maxItems).map((item) => item.number);
+}
+
 export async function upsertIssueComment(octokit: Octokit, issueNumber: number, marker: string, body: string): Promise<string> {
   const { owner, repo } = github.context.repo;
   const comments = await octokit.paginate(octokit.rest.issues.listComments, {

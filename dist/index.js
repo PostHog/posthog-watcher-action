@@ -23898,27 +23898,63 @@ function resolveCommand() {
     return { shouldRun: true };
   }
   const payload = context2.payload;
-  const mode = parseWatcherCommand(payload.comment?.body ?? "");
-  if (!mode) {
+  const command = parseWatcherCommand(payload.comment?.body ?? "");
+  if (!command) {
     return { shouldRun: false, reason: "issue comment does not contain a posthog-watcher command" };
+  }
+  if (command === "stop") {
+    return { shouldRun: false, command, reason: "received stop command" };
   }
   const association = payload.comment?.author_association ?? "";
   if (!TRUSTED_ASSOCIATIONS.has(association)) {
     return {
       shouldRun: false,
-      reason: `ignoring ${mode} command from untrusted author association: ${association || "unknown"}`
+      command,
+      reason: `ignoring ${command} command from untrusted author association: ${association || "unknown"}`
     };
   }
-  info(`Accepted @posthog-watcher ${mode} command from ${payload.comment?.user?.login ?? "unknown"}.`);
-  return { shouldRun: true, mode };
+  info(`Accepted @posthog-watcher ${command} command from ${payload.comment?.user?.login ?? "unknown"}.`);
+  return commandToResolution(command);
 }
 function parseWatcherCommand(body) {
-  const match = body.match(/(?:^|\s)@(?:posthog-watcher|posthog-watcher-action)(?:\[bot\])?\s+(triage|investigate|fix)\b/i);
-  const command = match?.[1]?.toLowerCase();
-  if (command === "triage" || command === "investigate" || command === "fix") {
-    return command;
-  }
+  const match = body.match(/(?:^|\s)@(?:posthog-watcher|posthog-watcher-action)(?:\[bot\])?\s+([^\n]+)/i);
+  const text = match?.[1]?.trim().toLowerCase();
+  if (!text) return void 0;
+  if (/^(triage|review|re-review|re-run)\b/.test(text)) return "triage";
+  if (/^investigate\b/.test(text)) return "investigate";
+  if (/^fix\s+ci\b/.test(text)) return "fix-ci";
+  if (/^address\s+review\b/.test(text)) return "address-review";
+  if (/^rebase\b/.test(text)) return "rebase";
+  if (/^(fix|autofix)\b/.test(text)) return "fix";
+  if (/^status\b/.test(text)) return "status";
+  if (/^explain\b/.test(text)) return "explain";
+  if (/^ask\b/.test(text)) return "ask";
+  if (/^(close|autoclose)\b/.test(text)) return "close";
+  if (/^(apply-close|apply close)\b/.test(text)) return "apply-close";
+  if (/^stop\b/.test(text)) return "stop";
   return void 0;
+}
+function commandToResolution(command) {
+  switch (command) {
+    case "triage":
+    case "review":
+    case "status":
+    case "explain":
+    case "ask":
+      return { shouldRun: true, command, mode: "triage" };
+    case "investigate":
+      return { shouldRun: true, command, mode: "investigate" };
+    case "fix":
+    case "fix-ci":
+    case "address-review":
+    case "rebase":
+      return { shouldRun: true, command, mode: "fix" };
+    case "close":
+    case "apply-close":
+      return { shouldRun: true, command, mode: "auto", applyClose: true };
+    case "stop":
+      return { shouldRun: false, command, reason: "received stop command" };
+  }
 }
 
 // src/comment.ts
@@ -24241,6 +24277,24 @@ async function addLabels(octokit, issueNumber, labels) {
   const { owner, repo } = context2.repo;
   await octokit.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels });
 }
+async function removeLabel(octokit, issueNumber, label) {
+  const { owner, repo } = context2.repo;
+  await octokit.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: label }).catch(() => void 0);
+}
+async function closeIssue(octokit, issueNumber) {
+  const { owner, repo } = context2.repo;
+  await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: "closed" });
+}
+async function searchOpenIssueNumbers(octokit, query, maxItems) {
+  const { owner, repo } = context2.repo;
+  const response = await octokit.rest.search.issuesAndPullRequests({
+    q: `repo:${owner}/${repo} ${query}`,
+    per_page: Math.min(100, maxItems),
+    sort: "updated",
+    order: "asc"
+  });
+  return response.data.items.filter((item) => !item.pull_request).slice(0, maxItems).map((item) => item.number);
+}
 async function upsertIssueComment(octokit, issueNumber, marker, body) {
   const { owner, repo } = context2.repo;
   const comments = await octokit.paginate(octokit.rest.issues.listComments, {
@@ -24438,6 +24492,52 @@ function truncate(value, max) {
 ...<truncated>` : value;
 }
 
+// src/review-gate.ts
+async function reviewGeneratedDiff(inputs) {
+  const diff = await git(["diff", "--unified=80"]);
+  const truncated = diff.length > 6e4 ? `${diff.slice(0, 6e4)}
+...<diff truncated>` : diff;
+  const output = await runPi({
+    inputs,
+    tools: ["read", "grep", "find", "ls"],
+    prompt: `Independently review this generated diff before a bot PR is pushed.
+
+Return ONLY JSON:
+{
+  "approve": true,
+  "confidence": 0.0,
+  "reason": "short reason",
+  "risks": ["risk bullets"]
+}
+
+Approve only if the diff is narrow, relevant to the issue, low risk, and does not contain unrelated refactors, secrets, workflow changes, or suspicious code.
+
+Diff:
+\`\`\`diff
+${truncated}
+\`\`\``
+  });
+  const result = parseReviewGate(output);
+  info(`Review gate: ${result.approve ? "approved" : "rejected"} (${Math.round(result.confidence * 100)}%) - ${result.reason}`);
+  return result;
+}
+function parseReviewGate(text) {
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  if (first === -1 || last <= first) return { approve: false, confidence: 0, reason: "review gate did not return JSON", risks: [] };
+  try {
+    const raw = JSON.parse(text.slice(first, last + 1));
+    return {
+      approve: Boolean(raw.approve) && typeof raw.confidence === "number" && raw.confidence >= 0.75,
+      confidence: typeof raw.confidence === "number" ? Math.max(0, Math.min(1, raw.confidence)) : 0,
+      reason: typeof raw.reason === "string" ? raw.reason : "",
+      risks: Array.isArray(raw.risks) ? raw.risks.filter((risk) => typeof risk === "string") : []
+    };
+  } catch {
+    return { approve: false, confidence: 0, reason: "review gate JSON parse failed", risks: [] };
+  }
+}
+
 // src/fix-runner.ts
 async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
   if (!shouldAttemptFix(triage, inputs)) return void 0;
@@ -24462,6 +24562,12 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
   }
   const repair = await runRepairLoop(issue2, triage, inputs);
   if (!repair) {
+    await git(["checkout", "-"]);
+    return void 0;
+  }
+  const reviewGate = await reviewGeneratedDiff(inputs);
+  if (!reviewGate.approve) {
+    warning(`Skipping PR because independent review gate rejected the diff: ${reviewGate.reason}`);
     await git(["checkout", "-"]);
     return void 0;
   }
@@ -24571,8 +24677,11 @@ function getInputs() {
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, "issue-number") : void 0,
     mode,
     allowFix: parseBoolean(getInput("allow-fix")),
+    allowClose: parseBoolean(getInput("allow-close")),
     dryRun: parseBoolean(getInput("dry-run")),
     labelAllowlist: parseCsv(getInput("labels")),
+    managedLabelPrefix: getInput("managed-label-prefix") || "posthog-watcher:",
+    syncManagedLabels: parseBoolean(getInput("sync-managed-labels") || "true"),
     maxComments: parsePositiveInt(getInput("max-comments") || "20", "max-comments"),
     maxChangedFiles: parsePositiveInt(getInput("max-changed-files") || "5", "max-changed-files"),
     maxDiffLines: parsePositiveInt(getInput("max-diff-lines") || "500", "max-diff-lines"),
@@ -24580,6 +24689,11 @@ function getInputs() {
     maxRelatedItems: parsePositiveInt(getInput("max-related-items") || "5", "max-related-items"),
     validationCommand: getInput("validation-command"),
     commitSha: getInput("commit-sha") || void 0,
+    maxSweepItems: parsePositiveInt(getInput("max-sweep-items") || "10", "max-sweep-items"),
+    sweepQuery: getInput("sweep-query") || "is:issue is:open archived:false",
+    stateEnabled: parseBoolean(getInput("state-enabled")),
+    stateRepo: getInput("state-repo"),
+    stateBranch: getInput("state-branch") || "posthog-watcher-state",
     commentMarker: getInput("comment-marker") || "<!-- posthog-watcher-action -->",
     piVersion: getInput("pi-version") || "0.79.10"
   };
@@ -24603,10 +24717,25 @@ function parseCsv(value) {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 function normalizeMode(value) {
-  if (value === "auto" || value === "triage" || value === "investigate" || value === "fix" || value === "commit-review") {
+  if (value === "auto" || value === "triage" || value === "investigate" || value === "fix" || value === "commit-review" || value === "sweep") {
     return value;
   }
-  throw new Error("mode must be one of: auto, triage, investigate, fix, commit-review");
+  throw new Error("mode must be one of: auto, triage, investigate, fix, commit-review, sweep");
+}
+
+// src/label-sync.ts
+function desiredManagedLabels(prefix, triage, security) {
+  const labels = /* @__PURE__ */ new Set();
+  if (triage.needsMoreInfo) labels.add(`${prefix}needs-info`);
+  if (triage.fix.straightforward) labels.add(`${prefix}fix-ready`);
+  if (triage.closeProposal.propose) labels.add(`${prefix}close-proposed`);
+  if (security.sensitive) labels.add(`${prefix}security-review`);
+  if (triage.fix.risk === "high" && !triage.fix.straightforward) labels.add(`${prefix}blocked`);
+  return [...labels];
+}
+function staleManagedLabels(existingLabels, desiredLabels, prefix) {
+  const desired = new Set(desiredLabels.map((label) => label.toLowerCase()));
+  return existingLabels.filter((label) => label.toLowerCase().startsWith(prefix.toLowerCase()) && !desired.has(label.toLowerCase()));
 }
 
 // src/labels.ts
@@ -24627,6 +24756,56 @@ function normalize(value) {
   return value.trim().toLowerCase();
 }
 
+// src/pr-repair-runner.ts
+async function repairPullRequest(octokit, pullNumber, inputs) {
+  const { owner, repo } = context2.repo;
+  const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+  const pr = pull.data;
+  if (pr.head.repo?.full_name !== `${owner}/${repo}`) {
+    warning(`Skipping PR repair for forked PR #${pullNumber}; GITHUB_TOKEN cannot safely push to fork branches.`);
+    return { conclusion: "skipped fork PR repair", prUrl: pr.html_url, repaired: false };
+  }
+  if (!inputs.allowFix) {
+    info("Skipping PR repair because allow-fix is false.");
+    return { conclusion: "skipped because allow-fix is false", prUrl: pr.html_url, repaired: false };
+  }
+  const branch = pr.head.ref;
+  await git(["fetch", "origin", `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+  await git(["checkout", "-B", branch, `origin/${branch}`]);
+  const prompt = `Repair pull request #${pullNumber}: ${pr.title}
+
+This is PR repair/adoption. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
+
+PR body:
+\`\`\`
+${pr.body ?? "(empty)"}
+\`\`\``;
+  await runPi({ inputs, tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], prompt, requireText: false });
+  if (inputs.validationCommand) await runShell(inputs.validationCommand, process.cwd());
+  const stats = parseNumstat(await git(["diff", "--numstat"]));
+  const failures = checkDiffGuardrails(stats, { maxChangedFiles: inputs.maxChangedFiles, maxDiffLines: inputs.maxDiffLines });
+  if (failures.length) {
+    warning(`Skipping PR branch push because guardrails failed:
+- ${failures.join("\n- ")}`);
+    return { conclusion: "skipped because guardrails failed", prUrl: pr.html_url, repaired: false };
+  }
+  const review = await reviewGeneratedDiff(inputs);
+  if (!review.approve) {
+    warning(`Skipping PR branch push because review gate rejected the diff: ${review.reason}`);
+    return { conclusion: "skipped because review gate rejected diff", prUrl: pr.html_url, repaired: false };
+  }
+  if (inputs.dryRun) {
+    info(`[dry-run] Would push PR branch ${branch}.`);
+    return { conclusion: "dry-run PR repair completed", prUrl: pr.html_url, repaired: true };
+  }
+  await git(["config", "user.name", "posthog-watcher-action"]);
+  await git(["config", "user.email", "posthog-watcher-action@users.noreply.github.com"]);
+  await git(["add", "--", ...stats.files]);
+  await git(["commit", "-m", `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`]);
+  await git(["push", "origin", branch]);
+  return { conclusion: "PR branch repaired", prUrl: pr.html_url, repaired: true };
+}
+
 // src/related.ts
 async function getRelatedContext(octokit, issue2, maxItems) {
   const related = /* @__PURE__ */ new Map();
@@ -24636,6 +24815,14 @@ async function getRelatedContext(octokit, issue2, maxItems) {
     if (number === issue2.number || related.size >= limit) continue;
     const item = await fetchIssueLike(octokit, number, "explicit-reference").catch(() => void 0);
     if (item) related.set(item.number, item);
+  }
+  if (related.size < limit) {
+    const closingPrs = await searchClosingPullRequests(octokit, issue2, limit - related.size).catch(() => []);
+    for (const item of closingPrs) {
+      if (item.number !== issue2.number && !related.has(item.number) && related.size < limit) {
+        related.set(item.number, item);
+      }
+    }
   }
   if (related.size < limit) {
     const searched = await searchByTitle(octokit, issue2, limit - related.size).catch(() => []);
@@ -24675,6 +24862,22 @@ async function fetchIssueLike(octokit, number, reason) {
     reason
   };
 }
+async function searchClosingPullRequests(octokit, issue2, limit) {
+  const { owner, repo } = context2.repo;
+  const response = await octokit.rest.search.issuesAndPullRequests({
+    q: `repo:${owner}/${repo} is:pr ${issue2.number} in:body`,
+    per_page: Math.min(10, limit)
+  });
+  return response.data.items.filter((item) => new RegExp(`(fixes|closes|resolves)\\s+#${issue2.number}\\b`, "i").test(item.body ?? "")).slice(0, limit).map((item) => ({
+    number: item.number,
+    type: "pull_request",
+    state: item.state,
+    title: item.title,
+    url: item.html_url,
+    labels: item.labels.map((label) => label.name ?? "").filter(Boolean),
+    reason: "closing-pr"
+  }));
+}
 async function searchByTitle(octokit, issue2, limit) {
   const { owner, repo } = context2.repo;
   const terms = issue2.title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((term) => term.length >= 4).slice(0, 5);
@@ -24695,6 +24898,100 @@ async function searchByTitle(octokit, issue2, limit) {
 }
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// src/security.ts
+var SECURITY_TERMS = [
+  "security",
+  "vulnerability",
+  "xss",
+  "csrf",
+  "rce",
+  "token",
+  "secret",
+  "credential",
+  "auth bypass",
+  "authentication bypass",
+  "authorization bypass",
+  "sql injection"
+];
+function assessIssueSecurity(issue2) {
+  const haystack = [issue2.title, issue2.body, ...issue2.labels, ...issue2.comments.map((comment) => comment.body)].join("\n").toLowerCase();
+  const reasons = SECURITY_TERMS.filter((term) => haystack.includes(term));
+  return { sensitive: reasons.length > 0, reasons };
+}
+
+// src/state.ts
+async function writeStateRecord(octokit, inputs, record) {
+  if (!inputs.stateEnabled || inputs.dryRun) return;
+  const { owner, repo } = stateRepository(inputs);
+  await ensureBranch(octokit, owner, repo, inputs.stateBranch);
+  const path2 = `records/${record.owner}-${record.repo}/${record.kind}s/${record.numberOrSha}.md`;
+  const body = renderRecord(record);
+  await upsertFile(octokit, owner, repo, inputs.stateBranch, path2, body, `Update watcher state for ${record.kind} ${record.numberOrSha}`);
+  await upsertFile(octokit, owner, repo, inputs.stateBranch, "dashboard.md", renderDashboardRow(record), "Update watcher dashboard");
+}
+function stateRepository(inputs) {
+  if (inputs.stateRepo) {
+    const [owner, repo] = inputs.stateRepo.split("/");
+    if (!owner || !repo) throw new Error("state-repo must be in owner/repo format");
+    return { owner, repo };
+  }
+  return context2.repo;
+}
+async function ensureBranch(octokit, owner, repo, branch) {
+  try {
+    await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+    return;
+  } catch {
+    const repoInfo = await octokit.rest.repos.get({ owner, repo });
+    const base = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${repoInfo.data.default_branch}` });
+    await octokit.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: base.data.object.sha });
+  }
+}
+async function upsertFile(octokit, owner, repo, branch, path2, content, message) {
+  let sha;
+  try {
+    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path2, ref: branch });
+    if (!Array.isArray(existing.data) && existing.data.type === "file") sha = existing.data.sha;
+  } catch (error2) {
+    debug(`State file ${path2} does not exist yet or branch is missing: ${error2 instanceof Error ? error2.message : String(error2)}`);
+  }
+  await octokit.rest.repos.createOrUpdateFileContents({
+    owner,
+    repo,
+    path: path2,
+    branch,
+    message,
+    content: Buffer.from(content).toString("base64"),
+    sha
+  });
+}
+function renderRecord(record) {
+  return `# ${record.kind} ${record.numberOrSha}: ${record.title}
+
+- Repo: ${record.owner}/${record.repo}
+- URL: ${record.url}
+- Conclusion: ${record.conclusion}
+- Labels: ${record.labels.join(", ") || "(none)"}
+- PR: ${record.prUrl || "(none)"}
+- Closed: ${record.closed ? "yes" : "no"}
+- Updated: ${(/* @__PURE__ */ new Date()).toISOString()}
+
+\`\`\`json
+${JSON.stringify(record.data, null, 2)}
+\`\`\`
+`;
+}
+function renderDashboardRow(record) {
+  return `# PostHog Watcher dashboard
+
+Latest touched item:
+
+| Repo | Item | Conclusion | Labels | PR | Closed | Updated |
+| --- | --- | --- | --- | --- | --- | --- |
+| ${record.owner}/${record.repo} | [${record.kind} ${record.numberOrSha}](${record.url}) | ${record.conclusion} | ${record.labels.join(", ") || ""} | ${record.prUrl || ""} | ${record.closed ? "yes" : "no"} | ${(/* @__PURE__ */ new Date()).toISOString()} |
+`;
 }
 
 // src/triage-schema.ts
@@ -24779,14 +25076,43 @@ async function main() {
   }
   const rawInputs = getInputs();
   const inputs = command.mode ? { ...rawInputs, mode: command.mode } : rawInputs;
+  const octokit = getOctokit(inputs.githubToken);
   if (inputs.mode === "commit-review") {
-    const result = await reviewCommit(inputs);
-    setOutput("conclusion", result.conclusion);
-    setOutput("triage-json", JSON.stringify(result));
+    const result2 = await reviewCommit(inputs);
+    setOutput("conclusion", result2.conclusion);
+    setOutput("triage-json", JSON.stringify(result2));
     return;
   }
-  const octokit = getOctokit(inputs.githubToken);
+  if (inputs.mode === "sweep") {
+    await sweep(octokit, inputs);
+    return;
+  }
   const issueNumber = resolveIssueNumber(inputs.issueNumber);
+  if (isPullRequestPayload() || context2.eventName === "pull_request") {
+    if (inputs.mode !== "fix") {
+      info("PR review/triage is read-only in this MVP; use @posthog-watcher fix for same-repo PR repair.");
+      setOutput("conclusion", "skipped PR mutation; use fix command");
+      return;
+    }
+    const result2 = await repairPullRequest(octokit, issueNumber, inputs);
+    setOutput("conclusion", result2.conclusion);
+    setOutput("pr-url", result2.prUrl);
+    return;
+  }
+  const result = await processIssue(octokit, issueNumber, inputs, command);
+  setOutputs(result);
+}
+async function sweep(octokit, inputs) {
+  const issueNumbers = await searchOpenIssueNumbers(octokit, inputs.sweepQuery, inputs.maxSweepItems);
+  info(`Sweep found ${issueNumbers.length} open issue(s).`);
+  const results = [];
+  for (const issueNumber of issueNumbers) {
+    results.push(await processIssue(octokit, issueNumber, inputs, { shouldRun: true }));
+  }
+  setOutput("conclusion", `swept ${results.length} issue(s)`);
+  setOutput("triage-json", JSON.stringify(results));
+}
+async function processIssue(octokit, issueNumber, inputs, command) {
   info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
   const issue2 = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments);
   const repositoryLabels = await listRepositoryLabels(octokit);
@@ -24794,21 +25120,42 @@ async function main() {
     (label) => repositoryLabels.some((existing) => existing.toLowerCase() === label.toLowerCase())
   );
   const relatedItems = await getRelatedContext(octokit, issue2, inputs.maxRelatedItems);
+  const security = assessIssueSecurity(issue2);
+  if (security.sensitive) {
+    warning(`Security-sensitive issue detected. Disabling fix and close actions. Reasons: ${security.reasons.join(", ")}`);
+  }
   const piOutput = await runPi({
     inputs,
     tools: ["read", "grep", "find", "ls"],
     prompt: formatIssuePrompt(issue2, allowedExistingLabels, inputs.mode, relatedItems)
   });
   const triage = parseTriageResult(piOutput);
-  triage.fix.straightforward = inputs.allowFix && triage.confidence >= 0.75 && !triage.needsMoreInfo && triage.fix.risk === "low";
+  triage.fix.straightforward = inputs.allowFix && !security.sensitive && triage.confidence >= 0.75 && !triage.needsMoreInfo && triage.fix.risk === "low";
   const labels = filterAllowedLabels(triage.labels, allowedExistingLabels, repositoryLabels);
+  const managedLabels = desiredManagedLabels(inputs.managedLabelPrefix, triage, security).filter(
+    (label) => repositoryLabels.some((existing) => existing.toLowerCase() === label.toLowerCase())
+  );
+  const staleLabels = inputs.syncManagedLabels ? staleManagedLabels(issue2.labels, managedLabels, inputs.managedLabelPrefix) : [];
+  const allLabels = [.../* @__PURE__ */ new Set([...labels, ...managedLabels])];
   if (inputs.dryRun) {
-    info(`[dry-run] Would add labels to #${issue2.number}: ${labels.join(", ") || "(none)"}`);
+    info(`[dry-run] Would add labels to #${issue2.number}: ${allLabels.join(", ") || "(none)"}`);
+    info(`[dry-run] Would remove stale managed labels from #${issue2.number}: ${staleLabels.join(", ") || "(none)"}`);
   } else {
-    await addLabels(octokit, issue2.number, labels);
+    for (const label of staleLabels) await removeLabel(octokit, issue2.number, label);
+    await addLabels(octokit, issue2.number, allLabels);
   }
-  const prUrl = await maybeCreateFixPr(octokit, issue2, triage, inputs);
-  const commentBody = buildTriageComment(inputs.commentMarker, issue2, triage, labels, prUrl);
+  const prUrl = security.sensitive ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs);
+  let closed = false;
+  if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, security.sensitive)) {
+    if (inputs.dryRun) {
+      info(`[dry-run] Would close issue #${issue2.number}.`);
+      closed = true;
+    } else {
+      await closeIssue(octokit, issue2.number);
+      closed = true;
+    }
+  }
+  const commentBody = buildTriageComment(inputs.commentMarker, issue2, triage, allLabels, prUrl);
   let commentUrl = "";
   if (inputs.dryRun) {
     info(`[dry-run] Would upsert issue comment:
@@ -24816,11 +25163,42 @@ ${commentBody}`);
   } else {
     commentUrl = await upsertIssueComment(octokit, issue2.number, inputs.commentMarker, commentBody);
   }
-  setOutput("conclusion", triage.conclusion);
-  setOutput("labels", labels.join(","));
-  setOutput("comment-url", commentUrl);
-  setOutput("pr-url", prUrl ?? "");
-  setOutput("triage-json", JSON.stringify(triage));
+  await writeStateRecord(octokit, inputs, {
+    kind: "issue",
+    owner: issue2.owner,
+    repo: issue2.repo,
+    numberOrSha: String(issue2.number),
+    title: issue2.title,
+    conclusion: triage.conclusion,
+    labels: allLabels,
+    url: issue2.url,
+    prUrl,
+    closed,
+    data: { triage, relatedItems, security, command: command.command }
+  });
+  return {
+    conclusion: triage.conclusion,
+    labels: allLabels,
+    commentUrl,
+    prUrl,
+    triageJson: JSON.stringify(triage),
+    closed
+  };
+}
+function shouldCloseIssue(inputs, command, proposed, confidence, securitySensitive) {
+  return Boolean(command.applyClose && inputs.allowClose && proposed && confidence >= 0.95 && !securitySensitive);
+}
+function isPullRequestPayload() {
+  const payload = context2.payload;
+  return Boolean(payload.issue?.pull_request || payload.pull_request);
+}
+function setOutputs(result) {
+  setOutput("conclusion", result.conclusion);
+  setOutput("labels", result.labels.join(","));
+  setOutput("comment-url", result.commentUrl);
+  setOutput("pr-url", result.prUrl ?? "");
+  setOutput("closed", String(result.closed));
+  setOutput("triage-json", result.triageJson);
 }
 main().catch((error2) => {
   setFailed(error2 instanceof Error ? error2.message : String(error2));

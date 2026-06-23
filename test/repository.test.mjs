@@ -48,9 +48,9 @@ test('fix PRs use stable per-issue branches for reuse', () => {
 test('new MVP features are documented', () => {
   const readme = read('README.md');
   assert.match(readme, /Repair loop/);
-  assert.match(readme, /Related context and close proposals/);
+  assert.match(readme, /Related context and close\/apply/);
   assert.match(readme, /Commit reviews/);
-  assert.match(readme, /never closes issues/);
+  assert.match(readme, /allow-close: true/);
 });
 
 test('pi JSON output parser falls back to final assistant messages', () => {

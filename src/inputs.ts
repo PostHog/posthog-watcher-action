@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 
-export type Mode = 'auto' | 'triage' | 'investigate' | 'fix' | 'commit-review';
+export type Mode = 'auto' | 'triage' | 'investigate' | 'fix' | 'commit-review' | 'sweep';
 
 export interface ActionInputs {
   openaiApiKey: string;
@@ -9,8 +9,11 @@ export interface ActionInputs {
   issueNumber?: number;
   mode: Mode;
   allowFix: boolean;
+  allowClose: boolean;
   dryRun: boolean;
   labelAllowlist: string[];
+  managedLabelPrefix: string;
+  syncManagedLabels: boolean;
   maxComments: number;
   maxChangedFiles: number;
   maxDiffLines: number;
@@ -18,6 +21,11 @@ export interface ActionInputs {
   maxRelatedItems: number;
   validationCommand: string;
   commitSha?: string;
+  maxSweepItems: number;
+  sweepQuery: string;
+  stateEnabled: boolean;
+  stateRepo: string;
+  stateBranch: string;
   commentMarker: string;
   piVersion: string;
 }
@@ -33,8 +41,11 @@ export function getInputs(): ActionInputs {
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, 'issue-number') : undefined,
     mode,
     allowFix: parseBoolean(core.getInput('allow-fix')),
+    allowClose: parseBoolean(core.getInput('allow-close')),
     dryRun: parseBoolean(core.getInput('dry-run')),
     labelAllowlist: parseCsv(core.getInput('labels')),
+    managedLabelPrefix: core.getInput('managed-label-prefix') || 'posthog-watcher:',
+    syncManagedLabels: parseBoolean(core.getInput('sync-managed-labels') || 'true'),
     maxComments: parsePositiveInt(core.getInput('max-comments') || '20', 'max-comments'),
     maxChangedFiles: parsePositiveInt(core.getInput('max-changed-files') || '5', 'max-changed-files'),
     maxDiffLines: parsePositiveInt(core.getInput('max-diff-lines') || '500', 'max-diff-lines'),
@@ -42,6 +53,11 @@ export function getInputs(): ActionInputs {
     maxRelatedItems: parsePositiveInt(core.getInput('max-related-items') || '5', 'max-related-items'),
     validationCommand: core.getInput('validation-command'),
     commitSha: core.getInput('commit-sha') || undefined,
+    maxSweepItems: parsePositiveInt(core.getInput('max-sweep-items') || '10', 'max-sweep-items'),
+    sweepQuery: core.getInput('sweep-query') || 'is:issue is:open archived:false',
+    stateEnabled: parseBoolean(core.getInput('state-enabled')),
+    stateRepo: core.getInput('state-repo'),
+    stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',
     commentMarker: core.getInput('comment-marker') || '<!-- posthog-watcher-action -->',
     piVersion: core.getInput('pi-version') || '0.79.10',
   };
@@ -73,8 +89,8 @@ function parseCsv(value: string): string[] {
 }
 
 function normalizeMode(value: string): Mode {
-  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix' || value === 'commit-review') {
+  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix' || value === 'commit-review' || value === 'sweep') {
     return value;
   }
-  throw new Error('mode must be one of: auto, triage, investigate, fix, commit-review');
+  throw new Error('mode must be one of: auto, triage, investigate, fix, commit-review, sweep');
 }

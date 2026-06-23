@@ -1,0 +1,36 @@
+name: PostHog Watcher sweep
+
+on:
+  workflow_dispatch:
+    inputs:
+      max-sweep-items:
+        description: Maximum open issues to process
+        required: false
+        default: '5'
+  schedule:
+    - cron: '17 8 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: ./
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: sweep
+          max-sweep-items: ${{ inputs.max-sweep-items || '5' }}
+          allow-fix: 'false'
+          allow-close: 'false'
+          state-enabled: 'true'

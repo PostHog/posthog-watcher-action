@@ -23,11 +23,15 @@ inputs:
     required: false
     default: ''
   mode:
-    description: auto, triage, investigate, fix, or commit-review
+    description: auto, triage, investigate, fix, commit-review, or sweep
     required: false
     default: auto
   allow-fix:
     description: Whether the action may create a fix branch and draft PR
+    required: false
+    default: 'false'
+  allow-close:
+    description: Whether trusted maintainer close/apply-close commands may close high-confidence issues
     required: false
     default: 'false'
   dry-run:
@@ -38,6 +42,14 @@ inputs:
     description: Comma-separated allowlist of labels the agent may add
     required: false
     default: bug,documentation,enhancement,question,needs-info,good-first-issue
+  managed-label-prefix:
+    description: Prefix for labels exclusively managed by this action
+    required: false
+    default: 'posthog-watcher:'
+  sync-managed-labels:
+    description: Whether to remove stale labels with managed-label-prefix before adding current managed labels
+    required: false
+    default: 'true'
   max-comments:
     description: Maximum issue comments to include in context
     required: false
@@ -66,6 +78,26 @@ inputs:
     description: Commit SHA to review when mode is commit-review. Defaults to github.sha.
     required: false
     default: ''
+  max-sweep-items:
+    description: Maximum open issues to process in sweep mode
+    required: false
+    default: '10'
+  sweep-query:
+    description: GitHub search query suffix for sweep mode
+    required: false
+    default: 'is:issue is:open archived:false'
+  state-enabled:
+    description: Whether to write durable markdown state records and dashboard to state-branch
+    required: false
+    default: 'false'
+  state-repo:
+    description: Repository for durable state as owner/repo. Defaults to current repository.
+    required: false
+    default: ''
+  state-branch:
+    description: Branch for durable state records and dashboard
+    required: false
+    default: posthog-watcher-state
   comment-marker:
     description: Hidden marker used to create/update a single durable issue comment
     required: false
@@ -84,6 +116,8 @@ outputs:
     description: Created or updated triage comment URL
   pr-url:
     description: Draft PR URL, when a fix PR was created
+  closed:
+    description: Whether the issue was closed by an explicit trusted close/apply-close command
   triage-json:
     description: Raw normalized triage JSON
 

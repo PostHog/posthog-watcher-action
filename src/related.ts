@@ -9,7 +9,7 @@ export interface RelatedItem {
   title: string;
   url: string;
   labels: string[];
-  reason: 'explicit-reference' | 'title-search';
+  reason: 'explicit-reference' | 'title-search' | 'closing-pr';
 }
 
 export async function getRelatedContext(octokit: Octokit, issue: IssueSnapshot, maxItems: number): Promise<RelatedItem[]> {
@@ -21,6 +21,15 @@ export async function getRelatedContext(octokit: Octokit, issue: IssueSnapshot, 
     if (number === issue.number || related.size >= limit) continue;
     const item = await fetchIssueLike(octokit, number, 'explicit-reference').catch(() => undefined);
     if (item) related.set(item.number, item);
+  }
+
+  if (related.size < limit) {
+    const closingPrs = await searchClosingPullRequests(octokit, issue, limit - related.size).catch(() => []);
+    for (const item of closingPrs) {
+      if (item.number !== issue.number && !related.has(item.number) && related.size < limit) {
+        related.set(item.number, item);
+      }
+    }
   }
 
   if (related.size < limit) {
@@ -66,6 +75,27 @@ async function fetchIssueLike(octokit: Octokit, number: number, reason: RelatedI
     labels: item.labels.map((label: string | { name?: string | null }) => (typeof label === 'string' ? label : label.name ?? '')).filter(Boolean),
     reason,
   };
+}
+
+async function searchClosingPullRequests(octokit: Octokit, issue: IssueSnapshot, limit: number): Promise<RelatedItem[]> {
+  const { owner, repo } = github.context.repo;
+  const response = await octokit.rest.search.issuesAndPullRequests({
+    q: `repo:${owner}/${repo} is:pr ${issue.number} in:body`,
+    per_page: Math.min(10, limit),
+  });
+
+  return response.data.items
+    .filter((item) => new RegExp(`(fixes|closes|resolves)\\s+#${issue.number}\\b`, 'i').test(item.body ?? ''))
+    .slice(0, limit)
+    .map((item) => ({
+      number: item.number,
+      type: 'pull_request' as const,
+      state: item.state,
+      title: item.title,
+      url: item.html_url,
+      labels: item.labels.map((label: { name?: string | null }) => label.name ?? '').filter(Boolean),
+      reason: 'closing-pr' as const,
+    }));
 }
 
 async function searchByTitle(octokit: Octokit, issue: IssueSnapshot, limit: number): Promise<RelatedItem[]> {
