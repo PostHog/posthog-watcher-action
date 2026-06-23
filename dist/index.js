@@ -24763,6 +24763,7 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
     warning("Skipping fix because the checkout has uncommitted changes before pi runs.");
     return void 0;
   }
+  const originalRef = await currentCheckoutRef();
   const base = defaultBranch();
   const branch = `posthog-watcher/issue-${issue2.number}`;
   const existingPr = await findOpenPullRequestForBranch(octokit, branch);
@@ -24771,40 +24772,42 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
     info(`[dry-run] Would ${existingPr ? `update existing PR ${existingPr.url}` : existingRemoteBranch ? `reuse remote branch ${branch} and open a draft PR` : `create branch ${branch} and open a draft PR`}.`);
     return existingPr?.url;
   }
-  if (existingPr || existingRemoteBranch) {
-    info(existingPr ? `Reusing existing draft PR branch ${branch}: ${existingPr.url}` : `Reusing existing remote branch ${branch}.`);
-    await checkoutExistingBranch(branch);
-  } else {
-    await git(["checkout", "-B", branch]);
+  try {
+    if (existingPr || existingRemoteBranch) {
+      info(existingPr ? `Reusing existing draft PR branch ${branch}: ${existingPr.url}` : `Reusing existing remote branch ${branch}.`);
+      await checkoutExistingBranch(branch);
+    } else {
+      await git(["checkout", "-B", branch]);
+    }
+    const repair = await runRepairLoop(issue2, triage, inputs);
+    if (!repair) {
+      return void 0;
+    }
+    const reviewGate = await reviewGeneratedDiff(inputs);
+    if (!reviewGate.approve) {
+      warning(`Skipping PR because independent review gate rejected the diff: ${reviewGate.reason}`);
+      return void 0;
+    }
+    await git(["config", "user.name", "posthog-watcher-action"]);
+    await git(["config", "user.email", "posthog-watcher-action@users.noreply.github.com"]);
+    await git(["add", "--", ...repair.files]);
+    await git(["commit", "-m", `Fix #${issue2.number}: ${issue2.title.slice(0, 80)}`]);
+    await git(["push", "--set-upstream", "origin", branch]);
+    if (existingPr) {
+      info(`Updated existing draft PR: ${existingPr.url}`);
+      return existingPr.url;
+    }
+    const prUrl = await createDraftPullRequest(octokit, {
+      title: `Fix #${issue2.number}: ${issue2.title}`,
+      head: branch,
+      base,
+      body: buildPullRequestBody(issue2, triage, repair.files, inputs.validationCommand)
+    });
+    info(`Created draft PR: ${prUrl}`);
+    return prUrl;
+  } finally {
+    await restoreCheckout(originalRef);
   }
-  const repair = await runRepairLoop(issue2, triage, inputs);
-  if (!repair) {
-    await git(["checkout", "-"]);
-    return void 0;
-  }
-  const reviewGate = await reviewGeneratedDiff(inputs);
-  if (!reviewGate.approve) {
-    warning(`Skipping PR because independent review gate rejected the diff: ${reviewGate.reason}`);
-    await git(["checkout", "-"]);
-    return void 0;
-  }
-  await git(["config", "user.name", "posthog-watcher-action"]);
-  await git(["config", "user.email", "posthog-watcher-action@users.noreply.github.com"]);
-  await git(["add", "--", ...repair.files]);
-  await git(["commit", "-m", `Fix #${issue2.number}: ${issue2.title.slice(0, 80)}`]);
-  await git(["push", "--set-upstream", "origin", branch]);
-  if (existingPr) {
-    info(`Updated existing draft PR: ${existingPr.url}`);
-    return existingPr.url;
-  }
-  const prUrl = await createDraftPullRequest(octokit, {
-    title: `Fix #${issue2.number}: ${issue2.title}`,
-    head: branch,
-    base,
-    body: buildPullRequestBody(issue2, triage, repair.files, inputs.validationCommand)
-  });
-  info(`Created draft PR: ${prUrl}`);
-  return prUrl;
 }
 async function runRepairLoop(issue2, triage, inputs) {
   const maxAttempts = Math.min(inputs.maxRepairAttempts, 3);
@@ -24844,6 +24847,14 @@ async function runValidation(inputs) {
   } catch (error2) {
     return `validation failed: ${error2 instanceof Error ? error2.message : String(error2)}`;
   }
+}
+async function currentCheckoutRef() {
+  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
+  return branch === "HEAD" ? git(["rev-parse", "HEAD"]) : branch;
+}
+async function restoreCheckout(originalRef) {
+  await git(["reset", "--hard", "HEAD"]).catch((error2) => warning(`Failed to reset worktree before restore: ${error2 instanceof Error ? error2.message : String(error2)}`));
+  await git(["checkout", originalRef]).catch((error2) => warning(`Failed to restore original checkout ${originalRef}: ${error2 instanceof Error ? error2.message : String(error2)}`));
 }
 async function remoteBranchExists(branch) {
   return Boolean(await git(["ls-remote", "--heads", "origin", branch]));

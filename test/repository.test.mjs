@@ -43,6 +43,8 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   assert.match(source, /findOpenPullRequestForBranch/);
   assert.match(source, /remoteBranchExists/);
   assert.match(source, /requireText: false/);
+  assert.match(source, /restoreCheckout/);
+  assert.match(source, /reset', '--hard/);
 });
 
 test('pre-existing related fixes block duplicate fix PRs', () => {
