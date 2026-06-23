@@ -119,7 +119,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     await addLabels(octokit, issue.number, allLabels);
   }
 
-  const fixBlocker = findPreExistingFixBlocker(relatedItems, triage);
+  const fixBlocker = findPreExistingFixBlocker(issue, relatedItems, triage);
   if (fixBlocker) core.info(`Skipping fix PR: ${fixBlocker}`);
   const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs);
   let closed = false;

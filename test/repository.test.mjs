@@ -50,6 +50,9 @@ test('pre-existing related fixes block duplicate fix PRs', () => {
   const index = read('src/index.ts');
   const readme = read('README.md');
   assert.match(source, /closing-pr/);
+  assert.match(source, /title-search/);
+  assert.match(source, /older related issue/);
+  assert.match(source, /titleSimilarity/);
   assert.match(source, /duplicate/);
   assert.match(source, /already-fixed/);
   assert.match(index, /findPreExistingFixBlocker/);

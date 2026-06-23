@@ -24230,17 +24230,37 @@ function summarizeConclusion(response) {
 }
 
 // src/fix-blocker.ts
-function findPreExistingFixBlocker(relatedItems, triage) {
-  const closingPullRequest = relatedItems.find(
-    (item) => item.type === "pull_request" && item.state === "open" && item.reason === "closing-pr"
+function findPreExistingFixBlocker(issue2, relatedItems, triage) {
+  const relatedPullRequest = relatedItems.find(
+    (item) => item.type === "pull_request" && item.state === "open" && (item.reason === "closing-pr" || item.reason === "title-search")
   );
-  if (closingPullRequest) {
-    return `An open related PR already appears to address this issue: #${closingPullRequest.number} ${closingPullRequest.url}`;
+  if (relatedPullRequest) {
+    return `An open related PR already appears to address this issue: #${relatedPullRequest.number} ${relatedPullRequest.url}`;
+  }
+  const olderDuplicateIssue = relatedItems.find(
+    (item) => item.type === "issue" && item.state === "open" && item.number < issue2.number && item.reason === "title-search" && titleSimilarity(issue2.title, item.title) >= 0.3
+  );
+  if (olderDuplicateIssue) {
+    return `An older related issue appears to cover the same report: #${olderDuplicateIssue.number} ${olderDuplicateIssue.url}`;
   }
   if (triage.closeProposal.propose && (triage.closeProposal.category === "duplicate" || triage.closeProposal.category === "already-fixed") && triage.closeProposal.canonicalUrl) {
     return `Triage proposed this issue as ${triage.closeProposal.category} of ${triage.closeProposal.canonicalUrl}; skipping a duplicate fix PR.`;
   }
   return void 0;
+}
+function titleSimilarity(left, right) {
+  const leftTokens = titleTokens(left);
+  const rightTokens = titleTokens(right);
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = (/* @__PURE__ */ new Set([...leftTokens, ...rightTokens])).size;
+  return intersection / union;
+}
+function titleTokens(title) {
+  const stopWords = /* @__PURE__ */ new Set(["the", "and", "for", "with", "not", "api", "endpoint", "values", "value", "correctly", "wrong"]);
+  return new Set(
+    title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((token) => token.length >= 4 && !stopWords.has(token))
+  );
 }
 
 // src/github.ts
@@ -25169,7 +25189,7 @@ async function processIssue(octokit, issueNumber, inputs, command) {
     for (const label of staleLabels) await removeLabel(octokit, issue2.number, label);
     await addLabels(octokit, issue2.number, allLabels);
   }
-  const fixBlocker = findPreExistingFixBlocker(relatedItems, triage);
+  const fixBlocker = findPreExistingFixBlocker(issue2, relatedItems, triage);
   if (fixBlocker) info(`Skipping fix PR: ${fixBlocker}`);
   const prUrl = security.sensitive || fixBlocker ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs);
   let closed = false;

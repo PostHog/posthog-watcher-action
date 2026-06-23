@@ -15,7 +15,7 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Synchronizes labels with the `posthog-watcher:` managed prefix without touching human labels.
 - Creates or updates one marker-backed issue comment.
 - Looks up a capped set of related same-repo issues/PRs, including explicit refs and closing PR candidates.
-- Skips fix PR creation when a related open closing PR already appears to address the issue, or when triage proposes a duplicate/already-fixed canonical item.
+- Skips fix PR creation when a related open PR or older related issue already appears to address the same report, or when triage proposes a duplicate/already-fixed canonical item.
 - Can propose closes in comments and optionally close issues only with an explicit trusted command plus `allow-close: true`.
 - Runs a bounded repair loop and independent read-only review gate before pushing generated fix diffs.
 - Supports same-repo PR repair/adoption for trusted fix commands; fork PRs are skipped.
@@ -116,6 +116,8 @@ The action fetches up to `max-related-items` same-repo issues/PRs from explicit 
 Before creating a fix PR, the action deterministically skips PR creation if:
 
 - a related open PR contains closing syntax for the current issue
+- a related open PR is found by title search for the same report
+- an older open issue found by title search has sufficiently similar title tokens
 - triage proposes the issue as `duplicate` or `already-fixed` with a canonical URL
 
 This prevents opening another draft PR for work that already appears covered.
