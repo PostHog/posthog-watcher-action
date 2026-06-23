@@ -190,6 +190,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `sweep-query` | `is:issue is:open archived:false` | Search query suffix for `sweep` mode. |
 | `max-pi-calls` | `4` | Maximum pi calls allowed for one action run. |
 | `pi-timeout-ms` | `600000` | Timeout for each pi subprocess. |
+| `approve-project-resources` | `true` | Pass `--approve` to pi so host repository `AGENTS.md`, `.pi`, and `.agents` resources can be trusted in CI. |
 | `state-enabled` | `false` | Write durable markdown state records and dashboard. |
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
@@ -198,6 +199,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 ## Guardrails
 
 - Triage uses read-only tools: `read`, `grep`, `find`, `ls`.
+- By default, pi is run with `--approve` so host repo `AGENTS.md`, `.pi`, and `.agents` resources are available in CI. Set `approve-project-resources: false` to disable this.
 - Fix mode removes GitHub tokens from the `pi` subprocess environment.
 - The wrapper, not `pi`, performs GitHub API mutations.
 - Draft PR creation is skipped if the diff is too large or touches workflow files, lockfiles, or minified files.

@@ -24,6 +24,7 @@ export async function runPi(options: PiRunOptions): Promise<string> {
     '--package',
     `@earendil-works/pi-coding-agent@${options.inputs.piVersion}`,
     'pi',
+    ...(options.inputs.approveProjectResources ? ['--approve'] : []),
     '--mode',
     'json',
     '--no-session',

@@ -89,6 +89,8 @@ test('advanced hardening features are wired', () => {
   assert.match(inputs, /maxPiCalls/);
   assert.match(inputs, /piTimeoutMs/);
   assert.match(piRunner, /consumePiCall/);
+  assert.match(piRunner, /--approve/);
+  assert.match(inputs, /approveProjectResources/);
   assert.match(state, /index\.json/);
   assert.match(state, /isConflictLike/);
   assert.match(prRepair, /posthog-watcher:autofix/);
