@@ -19,14 +19,15 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
   const base = defaultBranch();
   const branch = `posthog-watcher/issue-${issue.number}`;
   const existingPr = await findOpenPullRequestForBranch(octokit, branch);
+  const existingRemoteBranch = await remoteBranchExists(branch);
 
   if (inputs.dryRun) {
-    core.info(`[dry-run] Would ${existingPr ? `update existing PR ${existingPr.url}` : `create branch ${branch} and open a draft PR`}.`);
+    core.info(`[dry-run] Would ${existingPr ? `update existing PR ${existingPr.url}` : existingRemoteBranch ? `reuse remote branch ${branch} and open a draft PR` : `create branch ${branch} and open a draft PR`}.`);
     return existingPr?.url;
   }
 
-  if (existingPr) {
-    core.info(`Reusing existing draft PR branch ${branch}: ${existingPr.url}`);
+  if (existingPr || existingRemoteBranch) {
+    core.info(existingPr ? `Reusing existing draft PR branch ${branch}: ${existingPr.url}` : `Reusing existing remote branch ${branch}.`);
     await checkoutExistingBranch(branch);
   } else {
     await git(['checkout', '-B', branch]);
@@ -103,6 +104,10 @@ async function runValidation(inputs: ActionInputs): Promise<string | undefined> 
   } catch (error) {
     return `validation failed: ${error instanceof Error ? error.message : String(error)}`;
   }
+}
+
+async function remoteBranchExists(branch: string): Promise<boolean> {
+  return Boolean(await git(['ls-remote', '--heads', 'origin', branch]));
 }
 
 async function checkoutExistingBranch(branch: string): Promise<void> {

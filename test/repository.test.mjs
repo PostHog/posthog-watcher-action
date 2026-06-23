@@ -27,6 +27,7 @@ test('readme declares experimental PostHog SDK scope', () => {
   const readme = read('README.md');
   assert.match(readme, /Experimental \/ WIP/);
   assert.match(readme, /PostHog SDK repositories/);
+  assert.match(readme, /Allow GitHub Actions to create and approve pull requests/);
 });
 
 test('maintainer issue comment commands are documented', () => {
@@ -40,6 +41,7 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   const source = read('src/fix-runner.ts');
   assert.match(source, /posthog-watcher\/issue-\$\{issue\.number\}/);
   assert.match(source, /findOpenPullRequestForBranch/);
+  assert.match(source, /remoteBranchExists/);
 });
 
 test('new MVP features are documented', () => {

@@ -24447,12 +24447,13 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
   const base = defaultBranch();
   const branch = `posthog-watcher/issue-${issue2.number}`;
   const existingPr = await findOpenPullRequestForBranch(octokit, branch);
+  const existingRemoteBranch = await remoteBranchExists(branch);
   if (inputs.dryRun) {
-    info(`[dry-run] Would ${existingPr ? `update existing PR ${existingPr.url}` : `create branch ${branch} and open a draft PR`}.`);
+    info(`[dry-run] Would ${existingPr ? `update existing PR ${existingPr.url}` : existingRemoteBranch ? `reuse remote branch ${branch} and open a draft PR` : `create branch ${branch} and open a draft PR`}.`);
     return existingPr?.url;
   }
-  if (existingPr) {
-    info(`Reusing existing draft PR branch ${branch}: ${existingPr.url}`);
+  if (existingPr || existingRemoteBranch) {
+    info(existingPr ? `Reusing existing draft PR branch ${branch}: ${existingPr.url}` : `Reusing existing remote branch ${branch}.`);
     await checkoutExistingBranch(branch);
   } else {
     await git(["checkout", "-B", branch]);
@@ -24517,6 +24518,9 @@ async function runValidation(inputs) {
   } catch (error2) {
     return `validation failed: ${error2 instanceof Error ? error2.message : String(error2)}`;
   }
+}
+async function remoteBranchExists(branch) {
+  return Boolean(await git(["ls-remote", "--heads", "origin", branch]));
 }
 async function checkoutExistingBranch(branch) {
   await git(["fetch", "origin", `refs/heads/${branch}:refs/remotes/origin/${branch}`]);

@@ -34,9 +34,9 @@ on:
         required: true
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: write # push posthog-watcher/issue-* branches
+  issues: write # add labels and update the marker-backed issue comment
+  pull-requests: write # open draft fix PRs
 
 jobs:
   watcher:
@@ -54,6 +54,8 @@ jobs:
 ```
 
 `allow-fix: 'true'` lets the action open or update a draft PR only when the issue looks low-risk, does not need more information, and the confidence is at least 75%. Because this is experimental, consider starting with `dry-run: 'true'` when testing on a new repository.
+
+For PR creation with `${{ secrets.GITHUB_TOKEN }}`, the target repository must also enable **Settings → Actions → General → Workflow permissions → Read and write permissions** and **Allow GitHub Actions to create and approve pull requests**.
 
 ## Maintainer commands
 
