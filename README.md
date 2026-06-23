@@ -1,5 +1,7 @@
 # posthog-watcher-action
 
+> **Experimental / WIP:** This action is an early prototype meant for triaging PostHog SDK repositories. It is not a general-purpose maintenance bot yet, and fix PR creation should stay disabled unless a maintainer explicitly opts in.
+
 GitHub Action that uses [`pi`](https://github.com/earendil-works/pi) to triage issues, add labels, investigate relevant code, and optionally open a small draft PR for straightforward fixes.
 
 This is intentionally much simpler than ClawSweeper: one issue in, one triage comment out, optional guarded fix PR.
