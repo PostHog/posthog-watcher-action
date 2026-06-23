@@ -44,7 +44,7 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ inputs['issue-number'] }}
-          model: openai/gpt-4o
+          model: openai/gpt-5.5:high
           allow-fix: 'false'
 ```
 
@@ -56,7 +56,7 @@ For the first `posthog-js` trial, keep `allow-fix: 'false'`. Enable fixes later 
 | --- | --- | --- |
 | `openai-api-key` | required | OpenAI API key used by `pi`. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, and PRs. |
-| `model` | `openai/gpt-4o` | pi model identifier. |
+| `model` | `openai/gpt-5.5:high` | pi model identifier with high thinking enabled. |
 | `issue-number` | event issue | Issue number to process. |
 | `mode` | `auto` | `auto`, `triage`, `investigate`, or `fix`. |
 | `allow-fix` | `false` | Allows draft PR creation when triage says the fix is straightforward. |

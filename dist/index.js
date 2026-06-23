@@ -24306,7 +24306,7 @@ function getInputs() {
   return {
     openaiApiKey: required("openai-api-key"),
     githubToken: required("github-token"),
-    model: getInput("model") || "openai/gpt-4o",
+    model: getInput("model") || "openai/gpt-5.5:high",
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, "issue-number") : void 0,
     mode,
     allowFix: parseBoolean(getInput("allow-fix")),

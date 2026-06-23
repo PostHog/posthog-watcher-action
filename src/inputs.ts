@@ -26,7 +26,7 @@ export function getInputs(): ActionInputs {
   return {
     openaiApiKey: required('openai-api-key'),
     githubToken: required('github-token'),
-    model: core.getInput('model') || 'openai/gpt-4o',
+    model: core.getInput('model') || 'openai/gpt-5.5:high',
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, 'issue-number') : undefined,
     mode,
     allowFix: parseBoolean(core.getInput('allow-fix')),
