@@ -95,6 +95,7 @@ ${JSON.stringify(triage, null, 2)}
 Requirements:
 - Make only a straightforward, low-risk fix.
 - The diff must change behavior relevant to the reported bug. Do not make refactor-only, algebraic no-op, formatting-only, or style-only changes.
+- Establish or preserve a minimal failing reproduction/regression check before implementation where possible; it must fail before the fix and pass after the fix.
 - If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values before/with the fix.
 - Inspect nearby tests and implementation before editing. Prefer the smallest source change plus the smallest focused test.
 - Use existing style and commands.
@@ -120,6 +121,7 @@ ${fence(failureSummary)}
 Requirements:
 - Fix only the reported validation/guardrail/review failures.
 - If the previous diff was a no-op/refactor, replace it with a behavior-changing fix for the issue or remove it.
+- Preserve any reproduction/regression check from earlier attempts and keep it passing after the fix.
 - If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values.
 - Preserve the original minimal issue fix intent.
 - If the failure cannot be repaired safely, stop without broad changes and explain why.

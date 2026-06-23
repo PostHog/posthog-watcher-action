@@ -13,7 +13,7 @@ export function resolveIssueNumber(inputIssueNumber?: number): number {
   return number;
 }
 
-export async function getIssueSnapshot(octokit: Octokit, issueNumber: number, maxComments: number): Promise<IssueSnapshot> {
+export async function getIssueSnapshot(octokit: Octokit, issueNumber: number, maxComments: number, forcedCommentId?: number): Promise<IssueSnapshot> {
   const { owner, repo } = github.context.repo;
   const issueResponse = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });
   const issue = issueResponse.data;
@@ -28,6 +28,9 @@ export async function getIssueSnapshot(octokit: Octokit, issueNumber: number, ma
     issue_number: issueNumber,
     per_page: Math.min(100, maxComments),
   });
+  const recentComments = comments.slice(-maxComments);
+  const forcedComment = await findForcedComment(octokit, owner, repo, forcedCommentId, recentComments, comments);
+  const selectedComments = [...recentComments, ...(forcedComment ? [forcedComment] : [])];
 
   return {
     owner,
@@ -38,13 +41,27 @@ export async function getIssueSnapshot(octokit: Octokit, issueNumber: number, ma
     author: issue.user?.login ?? 'unknown',
     url: issue.html_url,
     labels: issue.labels.map((label: string | { name?: string | null }) => (typeof label === 'string' ? label : label.name ?? '')).filter(Boolean),
-    comments: comments.slice(-maxComments).map((comment: { user?: { login?: string } | null; body?: string | null; html_url: string; created_at: string }) => ({
+    comments: selectedComments.map((comment: { user?: { login?: string } | null; body?: string | null; html_url: string; created_at: string }) => ({
       author: comment.user?.login ?? 'unknown',
       body: comment.body ?? '',
       url: comment.html_url,
       createdAt: comment.created_at,
     })),
   };
+}
+
+type IssueComment = { id: number; user?: { login?: string } | null; body?: string | null; html_url: string; created_at: string };
+
+async function findForcedComment(octokit: Octokit, owner: string, repo: string, forcedCommentId: number | undefined, selectedComments: Array<{ id?: number }>, allComments: IssueComment[]): Promise<IssueComment | undefined> {
+  if (!forcedCommentId || selectedComments.some((comment) => comment.id === forcedCommentId)) return undefined;
+  const existing = allComments.find((comment) => comment.id === forcedCommentId);
+  if (existing) return existing;
+  return getIssueComment(octokit, owner, repo, forcedCommentId).catch(() => undefined);
+}
+
+export async function getIssueComment(octokit: Octokit, owner: string, repo: string, commentId: number): Promise<IssueComment> {
+  const response = await octokit.rest.issues.getComment({ owner, repo, comment_id: commentId });
+  return response.data;
 }
 
 export async function listRepositoryLabels(octokit: Octokit): Promise<string[]> {

@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 
-export type Mode = 'auto' | 'triage' | 'investigate' | 'fix' | 'commit-review' | 'sweep';
+export type QueuedMode = 'auto' | 'triage' | 'investigate' | 'fix';
+export type Mode = QueuedMode | 'commit-review' | 'sweep' | 'enqueue' | 'drain-queue';
 
 export interface ActionInputs {
   openaiApiKey: string;
@@ -22,10 +23,15 @@ export interface ActionInputs {
   maxRepairAttempts: number;
   maxRelatedItems: number;
   validationCommand: string;
+  reproductionCommand: string;
+  requireReproduction: boolean;
   commitSha?: string;
   maxSweepItems: number;
   maxSweepFixItems: number;
   sweepQuery: string;
+  queuedMode: QueuedMode;
+  maxQueueItems: number;
+  maxQueueAttempts: number;
   maxPiCalls: number;
   piTimeoutMs: number;
   approveProjectResources: boolean;
@@ -41,7 +47,7 @@ export function getInputs(): ActionInputs {
   const mode = normalizeMode(core.getInput('mode') || 'auto');
 
   return {
-    openaiApiKey: required('openai-api-key'),
+    openaiApiKey: optionalSecret('openai-api-key'),
     githubToken: required('github-token'),
     model: core.getInput('model') || 'openai/gpt-5.5:high',
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, 'issue-number') : undefined,
@@ -60,10 +66,15 @@ export function getInputs(): ActionInputs {
     maxRepairAttempts: parsePositiveInt(core.getInput('max-repair-attempts') || '2', 'max-repair-attempts'),
     maxRelatedItems: parsePositiveInt(core.getInput('max-related-items') || '5', 'max-related-items'),
     validationCommand: core.getInput('validation-command'),
+    reproductionCommand: core.getInput('reproduction-command'),
+    requireReproduction: parseBoolean(core.getInput('require-reproduction')),
     commitSha: core.getInput('commit-sha') || undefined,
     maxSweepItems: parsePositiveInt(core.getInput('max-sweep-items') || '10', 'max-sweep-items'),
     maxSweepFixItems: parseNonNegativeInt(core.getInput('max-sweep-fix-items') || '0', 'max-sweep-fix-items'),
     sweepQuery: core.getInput('sweep-query') || 'is:issue is:open archived:false',
+    queuedMode: normalizeQueuedMode(core.getInput('queued-mode') || 'auto'),
+    maxQueueItems: parsePositiveInt(core.getInput('max-queue-items') || '5', 'max-queue-items'),
+    maxQueueAttempts: parsePositiveInt(core.getInput('max-queue-attempts') || '3', 'max-queue-attempts'),
     maxPiCalls: parsePositiveInt(core.getInput('max-pi-calls') || '4', 'max-pi-calls'),
     piTimeoutMs: parsePositiveInt(core.getInput('pi-timeout-ms') || '600000', 'pi-timeout-ms'),
     approveProjectResources: parseBoolean(core.getInput('approve-project-resources')),
@@ -78,6 +89,12 @@ export function getInputs(): ActionInputs {
 function required(name: string): string {
   const value = core.getInput(name, { required: true });
   core.setSecret(value);
+  return value;
+}
+
+function optionalSecret(name: string): string {
+  const value = core.getInput(name);
+  if (value) core.setSecret(value);
   return value;
 }
 
@@ -108,9 +125,16 @@ function parseCsv(value: string): string[] {
     .filter(Boolean);
 }
 
-function normalizeMode(value: string): Mode {
-  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix' || value === 'commit-review' || value === 'sweep') {
+function normalizeQueuedMode(value: string): QueuedMode {
+  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix') {
     return value;
   }
-  throw new Error('mode must be one of: auto, triage, investigate, fix, commit-review, sweep');
+  throw new Error('queued-mode must be one of: auto, triage, investigate, fix');
+}
+
+function normalizeMode(value: string): Mode {
+  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix' || value === 'commit-review' || value === 'sweep' || value === 'enqueue' || value === 'drain-queue') {
+    return value;
+  }
+  throw new Error('mode must be one of: auto, triage, investigate, fix, commit-review, sweep, enqueue, drain-queue');
 }

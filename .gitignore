@@ -28,3 +28,5 @@ coverage/
 .vscode/
 
 # Keep dist committed for GitHub Actions usage.
+# Local Pi runtime state
+.atl/

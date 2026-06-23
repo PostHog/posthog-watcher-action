@@ -60,15 +60,31 @@ export async function runPi(options: PiRunOptions): Promise<string> {
 }
 
 function sanitizedEnv(openaiApiKey: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const key of Object.keys(env)) {
-    if (/TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL/i.test(key) || key.startsWith('INPUT_') || key === 'GH_TOKEN' || key === 'GITHUB_TOKEN') {
-      delete env[key];
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue;
+    if (SAFE_PI_ENV_KEYS.has(key) || key.startsWith('RUNNER_')) {
+      env[key] = value;
     }
   }
   env.OPENAI_API_KEY = openaiApiKey;
   return env;
 }
+
+const SAFE_PI_ENV_KEYS = new Set([
+  'PATH',
+  'HOME',
+  'USER',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'CI',
+  'LANG',
+  'LC_ALL',
+  'NODE_EXTRA_CA_CERTS',
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR',
+]);
 
 export function collectAssistantText(stdout: string): string {
   let streamingText = '';

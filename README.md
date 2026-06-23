@@ -18,10 +18,12 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Skips fix PR creation when a related open PR or older related issue already appears to address the same report, or when triage proposes a duplicate/already-fixed canonical item.
 - Can propose closes in comments and optionally close issues only with an explicit trusted command plus `allow-close: true`.
 - Runs a bounded repair loop and independent read-only review gate before pushing generated fix diffs.
+- Can enforce reproduction-first issue fixes with a wrapper-owned command that must fail before the fix and pass after it.
 - Supports same-repo PR repair/adoption for trusted fix commands; fork PRs are skipped.
 - Pulls failing GitHub Actions job log snippets and review comments into PR repair prompts when available.
 - Supports manual commit review mode for selected commits.
 - Supports capped scheduled backlog sweeps.
+- Can enqueue issue/PR events into a durable FIFO queue and drain them sequentially from a scheduled/manual worker.
 - Can write durable markdown records and an index-backed dashboard to a state branch when enabled.
 - Enforces `max-pi-calls` and `pi-timeout-ms` budgets per run.
 - Does not send suspected security-sensitive reports to pi/OpenAI unless `allow-security-ai: true`.
@@ -157,11 +159,15 @@ posthog-watcher/issue-123
 
 If an open PR or remote branch already exists for that branch, the action reuses and updates it instead of opening a duplicate PR.
 
-## Repair loop and review gate
+## Repair loop, reproduction, and review gate
 
-When fix mode is enabled, the action can give `pi` deterministic feedback from validation or guardrail failures and retry. `max-repair-attempts` defaults to `2` and is hard-capped at `3`.
+When fix mode is enabled, the action can give `pi` deterministic feedback from reproduction, validation, or guardrail failures and retry. `max-repair-attempts` defaults to `2` and is hard-capped at `3`.
 
-After validation and diff guardrails pass, the action runs a second independent read-only `pi` review of the generated diff. If the review gate rejects the diff and repair attempts remain, the rejection reason is fed back into the next repair attempt. The PR is skipped unless this review gate eventually approves with at least 75% confidence.
+By default, fixes remain best-effort. To make issue fixes reproduction-first, set `reproduction-command` to a shell command that is expected to fail before the fix and pass after it. If that command already passes before the fix, the action skips PR creation because the issue may already be fixed or the reproduction is not valid for the report.
+
+If `require-reproduction: 'true'` is set without `reproduction-command`, the action asks `pi` to add a minimal failing regression check first, then runs `validation-command` expecting failure before implementation. After each implementation attempt, that same validation command must pass before normal guardrails and review. If no `validation-command` is configured, the action skips the fix with a warning.
+
+After reproduction/validation and diff guardrails pass, the action runs a second independent read-only `pi` review of the generated diff. If the review gate rejects the diff and repair attempts remain, the rejection reason is fed back into the next repair attempt. The PR is skipped unless this review gate eventually approves with at least 75% confidence.
 
 ## PR repair/adoption
 
@@ -224,13 +230,86 @@ A sample scheduled/manual workflow lives in `.github/workflows/sweep.yml`.
 
 When `state-enabled: 'true'`, the action writes markdown records, `index.json`, and a generated `dashboard.md` to `state-branch` in `state-repo` or the current repository. The branch is created from the repository default branch if missing. State writes retry on branch/file conflicts and preserve up to 200 dashboard entries.
 
-Because GitHub Contents API writes can still race when multiple workflow runs update the same state branch at the same time, host repositories should serialize watcher runs with workflow-level concurrency:
+Because GitHub Contents API writes can still race when multiple workflow runs update the same state branch at the same time, host repositories should serialize watcher runs with workflow-level concurrency. Note that GitHub Actions concurrency is not a true FIFO queue: each group keeps at most one running and one pending run, so older pending runs can be cancelled when more events arrive.
 
 ```yaml
 concurrency:
   group: posthog-watcher-${{ github.repository }}
   cancel-in-progress: false
 ```
+
+## Dedicated queue worker
+
+For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or `openai-api-key`. Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`.
+
+Event enqueue workflow:
+
+```yaml
+name: PostHog Watcher enqueue
+
+on:
+  issues:
+    types: [opened, reopened, edited]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write # write queue.json to state branch
+  issues: read
+  pull-requests: read
+
+jobs:
+  enqueue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: PostHog/posthog-watcher-action@v0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: enqueue
+          queued-mode: auto
+          state-branch: posthog-watcher-state
+```
+
+Scheduled/manual queue worker:
+
+```yaml
+name: PostHog Watcher worker
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+concurrency:
+  group: posthog-watcher-worker-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: PostHog/posthog-watcher-action@v0
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: drain-queue
+          max-queue-items: '5'
+          max-queue-attempts: '3'
+          allow-fix: 'true'
+          state-branch: posthog-watcher-state
+```
+
+If a queued item fails, its attempt count is incremented before processing. The worker stops on that item to preserve FIFO, leaving it for a later worker run. Once `max-queue-attempts` is reached, the item is dropped with a warning so the queue can continue.
 
 ## Commit reviews
 
@@ -240,11 +319,11 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `openai-api-key` | required | OpenAI API key used by `pi`. |
+| `openai-api-key` | required except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, PRs, and optional state. |
 | `model` | `openai/gpt-5.5:high` | pi model identifier with high thinking enabled. |
 | `issue-number` | event issue | Issue or PR number to process. |
-| `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, or `sweep`. |
+| `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `sweep`, `enqueue`, or `drain-queue`. |
 | `allow-fix` | `false` | Allows draft PR creation or same-repo PR branch repair when guardrails pass. |
 | `require-fix-command` | `false` | If true, fixes are proposal-only until a trusted `@posthog-watcher fix` command is posted. Default keeps automatic fixes enabled when `allow-fix: true`. |
 | `allow-close` | `false` | Allows explicit trusted close/apply-close commands to close high-confidence issues. |
@@ -259,10 +338,15 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `max-repair-attempts` | `2` | Maximum repair attempts before giving up; hard-capped at 3. |
 | `max-related-items` | `5` | Maximum related same-repo issues/PRs to include as advisory context. |
 | `validation-command` | empty | Optional command to run before opening an autogenerated PR. |
+| `reproduction-command` | empty | Optional command expected to fail before an issue fix and pass after it. |
+| `require-reproduction` | `false` | Require a failing reproduction before issue fix attempts; uses `reproduction-command`, or `validation-command` after `pi` adds a minimal regression check. |
 | `commit-sha` | empty | Commit SHA to review in `commit-review` mode. |
 | `max-sweep-items` | `10` | Maximum open issues to process in `sweep` mode. |
 | `max-sweep-fix-items` | `0` | Maximum sweep items that may attempt fixes. |
 | `sweep-query` | `is:issue is:open archived:false` | Search query suffix for `sweep` mode. |
+| `queued-mode` | `auto` | Default processing mode stored by `enqueue` when no trusted watcher command is present: `auto`, `triage`, `investigate`, or `fix`. |
+| `max-queue-items` | `5` | Maximum queued items to drain sequentially in one `drain-queue` run. |
+| `max-queue-attempts` | `3` | Maximum failed drain attempts before dropping a queued item. |
 | `max-pi-calls` | `4` | Maximum pi calls allowed for one action run. |
 | `pi-timeout-ms` | `600000` | Timeout for each pi subprocess. |
 | `approve-project-resources` | `false` | Pass `--approve` to pi so host repository `AGENTS.md`, `.pi`, and `.agents` resources can be trusted in CI. Enable only for trusted repositories. |
@@ -276,7 +360,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 - Triage uses read-only tools: `read`, `grep`, `find`, `ls`.
 - By default, pi is **not** run with `--approve`. Set `approve-project-resources: true` only for trusted repositories when host repo `AGENTS.md`, `.pi`, and `.agents` resources should be available in CI.
-- Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only `OPENAI_API_KEY` to the pi process, and disables the agent `bash` tool. Wrapper-owned validation commands still run outside pi.
+- Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only `OPENAI_API_KEY` to the pi process, and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
 - The wrapper, not `pi`, performs GitHub API mutations.
 - Draft PR creation is skipped if the diff is too large or touches workflow files, lockfiles, or minified files.
 - Autogenerated fixes require `allow-fix: true`, `risk: low`, no `needsMoreInfo`, and confidence >= 75%; `fix.straightforward` is derived from those checks.
@@ -286,6 +370,8 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 - Close/apply requires an explicit trusted command and `allow-close: true`.
 - Security-sensitive issues skip fix and close actions, and skip third-party AI by default.
 - Sweep mode disables fixes by default with `max-sweep-fix-items: 0`.
+- `enqueue` mode writes only queue state and does not require `openai-api-key`.
+- `drain-queue` processes queued items FIFO and requires `openai-api-key` like other pi-backed modes.
 - Commit reviews are manual and read-only.
 
 ## Development

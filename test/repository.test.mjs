@@ -42,11 +42,15 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   assert.match(source, /posthog-watcher\/issue-\$\{issue\.number\}/);
   assert.match(source, /findOpenPullRequestForBranch/);
   assert.match(source, /remoteBranchExists/);
-  assert.match(source, /requireText: false/);
+  assert.match(source, /runIssueRepair/);
   assert.match(source, /restoreCheckout/);
   assert.match(source, /reset', '--hard/);
   assert.doesNotMatch(source, /'bash'/);
-  assert.match(source, /independent review gate rejected the diff/);
+  const agent = read('src/agent.ts');
+  const repairRun = read('src/repair-run.ts');
+  assert.match(agent, /requireText: false/);
+  assert.doesNotMatch(agent, /'bash'/);
+  assert.match(repairRun, /independent review gate rejected the diff/);
 });
 
 test('pre-existing related fixes block duplicate fix PRs', () => {
@@ -96,6 +100,8 @@ test('new MVP features are documented', () => {
   assert.match(readme, /posthog-watcher-\$\{\{ github\.repository \}\}/);
   assert.match(readme, /cancel-in-progress: false/);
   assert.match(readme, /require-fix-command/);
+  assert.match(readme, /reproduction-command/);
+  assert.match(readme, /require-reproduction/);
   assert.match(readme, /max-comments/);
   assert.match(readme, /max-changed-files/);
   assert.match(readme, /comment-marker/);
@@ -111,13 +117,20 @@ test('advanced hardening features are wired', () => {
   const index = read('src/index.ts');
   assert.match(inputs, /maxPiCalls/);
   assert.match(inputs, /piTimeoutMs/);
+  assert.match(inputs, /queuedMode/);
+  assert.match(inputs, /maxQueueItems/);
+  assert.match(inputs, /maxQueueAttempts/);
   assert.match(piRunner, /consumePiCall/);
   assert.match(piRunner, /--approve/);
   assert.doesNotMatch(piRunner, /--api-key/);
   assert.match(piRunner, /OPENAI_API_KEY/);
-  assert.match(piRunner, /TOKEN\|KEY\|SECRET\|PASSWORD\|CREDENTIAL/);
+  assert.match(piRunner, /SAFE_PI_ENV_KEYS/);
+  assert.match(piRunner, /key\.startsWith\('RUNNER_'/);
+  assert.doesNotMatch(piRunner, /OPENAI_BASE_URL/);
   assert.match(inputs, /approveProjectResources/);
   assert.match(inputs, /requireFixCommand/);
+  assert.match(inputs, /reproductionCommand/);
+  assert.match(inputs, /requireReproduction/);
   assert.match(state, /index\.json/);
   assert.match(state, /isConflictLike/);
   assert.match(prRepair, /posthog-watcher:autofix/);
@@ -125,6 +138,70 @@ test('advanced hardening features are wired', () => {
   assert.match(commands, /PostHog Watcher \$\{command\}/);
   assert.match(snapshot, /posthog-watcher-snapshot/);
   assert.match(index, /skipped unchanged issue during sweep/);
+});
+
+test('dedicated queue modes are wired without requiring OpenAI for enqueue', () => {
+  const action = read('action.yml');
+  const inputs = read('src/inputs.ts');
+  const index = read('src/index.ts');
+  const queue = read('src/queue.ts');
+  const readme = read('README.md');
+  assert.match(action, /enqueue, or drain-queue/);
+  assert.match(action, /queued-mode/);
+  assert.match(action, /max-queue-items/);
+  assert.match(action, /max-queue-attempts/);
+  assert.match(action, /required: false/);
+  assert.match(inputs, /optionalSecret\('openai-api-key'\)/);
+  assert.match(inputs, /'enqueue'/);
+  assert.match(inputs, /'drain-queue'/);
+  assert.match(index, /rawInputs\.mode === 'enqueue'/);
+  assert.match(index, /requireOpenAiApiKey\(rawInputs\)/);
+  assert.match(index, /inputs\.mode === 'drain-queue'/);
+  assert.match(index, /replyToCommand\(octokit, item\.number, itemInputs, item\.command, await queuedCommandBody/);
+  assert.match(queue, /queue\.json/);
+  assert.match(queue, /samePendingItem/);
+  assert.match(queue, /commentId: payload\.comment\?\.id/);
+  assert.match(queue, /commandSourceKey/);
+  assert.match(queue, /attempts: 0/);
+  assert.match(readme, /Dedicated queue worker/);
+  assert.match(readme, /without `pi` or `openai-api-key`/);
+});
+
+test('queue drain preserves FIFO and retry state', () => {
+  const index = read('src/index.ts');
+  const queue = read('src/queue.ts');
+  const github = read('src/github.ts');
+  const commandReplies = read('src/command-replies.ts');
+  assert.match(index, /const item = queue\.items\[0\]/);
+  assert.match(index, /incrementQueueAttempt/);
+  assert.match(index, /Stopping queue drain/);
+  assert.match(index, /attempted\.attempts >= inputs\.maxQueueAttempts/);
+  assert.match(queue, /items: \[\.\.\.queue\.items, item\]/);
+  assert.match(queue, /createOrUpdateFileContents/);
+  assert.match(queue, /Queue update conflict/);
+  assert.match(index, /queuedCommandBody/);
+  assert.match(github, /forcedCommentId/);
+  assert.match(github, /findForcedComment/);
+  assert.match(github, /recentComments/);
+  assert.match(commandReplies, /questionOverride/);
+});
+
+test('reproduction-first repair is opt-in and wrapper-owned', () => {
+  const action = read('action.yml');
+  const inputs = read('src/inputs.ts');
+  const repairRun = read('src/repair-run.ts');
+  const environment = read('src/environment.ts');
+  const issueContext = read('src/issue-context.ts');
+  assert.match(action, /reproduction-command/);
+  assert.match(action, /require-reproduction/);
+  assert.match(inputs, /reproductionCommand: core\.getInput\('reproduction-command'\)/);
+  assert.match(inputs, /requireReproduction: parseBoolean\(core\.getInput\('require-reproduction'\)\)/);
+  assert.match(repairRun, /if \(!inputs\.requireReproduction\) return \{ kind: 'none' \}/);
+  assert.match(repairRun, /expected to fail/);
+  assert.match(repairRun, /expected to pass/);
+  assert.match(environment, /ExpectedOutcome = 'success' \| 'failure'/);
+  assert.match(environment, /runCommandStatus\('\/bin\/bash'/);
+  assert.match(issueContext, /fail before the fix and pass after the fix/);
 });
 
 test('pi JSON output parser falls back to final assistant messages', () => {

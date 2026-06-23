@@ -1,11 +1,9 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { checkDiffGuardrails, parseNumstat } from './guardrails.js';
-import { git, runShell } from './git.js';
+import { git } from './git.js';
 import type { Octokit } from './github.js';
 import type { ActionInputs } from './inputs.js';
-import { runPi } from './pi-runner.js';
-import { reviewGeneratedDiff } from './review-gate.js';
+import { runPullRequestRepairSequence } from './repair-run.js';
 
 export interface PullRequestRepairResult {
   conclusion: string;
@@ -106,24 +104,10 @@ PR body:
 ${pr.body ?? '(empty)'}
 \`\`\``;
 
-  await runPi({ inputs, tools: ['read', 'grep', 'find', 'ls', 'edit', 'write'], prompt, requireText: false });
-
-  if (inputs.validationCommand) await runShell(inputs.validationCommand, process.cwd());
-
-  const stats = parseNumstat(await git(['diff', '--numstat']));
-  if (!stats.files.length) {
-    return { conclusion: 'skipped PR repair because no files changed', prUrl: pr.html_url, repaired: false };
-  }
-  const failures = checkDiffGuardrails(stats, { maxChangedFiles: inputs.maxChangedFiles, maxDiffLines: inputs.maxDiffLines });
-  if (failures.length) {
-    core.warning(`Skipping PR branch push because guardrails failed:\n- ${failures.join('\n- ')}`);
-    return { conclusion: 'skipped because guardrails failed', prUrl: pr.html_url, repaired: false };
-  }
-
-  const review = await reviewGeneratedDiff(inputs);
-  if (!review.approve) {
-    core.warning(`Skipping PR branch push because review gate rejected the diff: ${review.reason}`);
-    return { conclusion: 'skipped because review gate rejected diff', prUrl: pr.html_url, repaired: false };
+  const repair = await runPullRequestRepairSequence(prompt, inputs);
+  if (!repair.repaired) {
+    if (repair.warning) core.warning(repair.warning);
+    return { conclusion: repair.reason, prUrl: pr.html_url, repaired: false };
   }
 
   if (inputs.dryRun) {
@@ -133,7 +117,7 @@ ${pr.body ?? '(empty)'}
 
   await git(['config', 'user.name', 'posthog-watcher-action']);
   await git(['config', 'user.email', 'posthog-watcher-action@users.noreply.github.com']);
-  await git(['add', '--', ...stats.files]);
+  await git(['add', '--', ...repair.files]);
   await git(['commit', '-m', `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`]);
   await git(['push', 'origin', branch]);
   return { conclusion: 'PR branch repaired', prUrl: pr.html_url, repaired: true };

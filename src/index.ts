@@ -7,13 +7,14 @@ import { reviewCommit } from './commit-review.js';
 import { assessDuplicate } from './duplicate-detector.js';
 import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
-import { addLabels, closeIssue, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit } from './github.js';
+import { addLabels, closeIssue, getIssueComment, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit } from './github.js';
 import { getInputs, type ActionInputs } from './inputs.js';
 import { formatIssuePrompt } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
 import { filterAllowedLabels } from './labels.js';
 import { getPiCallCount, resetPiCallCount } from './pi-budget.js';
 import { runPi } from './pi-runner.js';
+import { enqueueCurrentPayload, incrementQueueAttempt, readQueue, removeQueueItem, type QueueItem } from './queue.js';
 import { redactSecrets } from './redact.js';
 import { repairPullRequest } from './pr-repair-runner.js';
 import { getRelatedContext } from './related.js';
@@ -32,8 +33,22 @@ async function main(): Promise<void> {
   }
 
   const rawInputs = getInputs();
-  const inputs = command.mode ? { ...rawInputs, mode: command.mode } : rawInputs;
-  const octokit = github.getOctokit(inputs.githubToken);
+  const octokit = github.getOctokit(rawInputs.githubToken);
+
+  if (rawInputs.mode === 'enqueue') {
+    const result = await enqueueCurrentPayload(octokit, rawInputs, command);
+    core.setOutput('conclusion', result.enqueued ? `queued ${result.item.kind} #${result.item.number}` : `already queued ${result.item.kind} #${result.item.number}`);
+    core.setOutput('triage-json', JSON.stringify(result));
+    return;
+  }
+
+  requireOpenAiApiKey(rawInputs);
+  const inputs = command.mode && rawInputs.mode !== 'drain-queue' ? { ...rawInputs, mode: command.mode } : rawInputs;
+
+  if (inputs.mode === 'drain-queue') {
+    await drainQueue(octokit, inputs);
+    return;
+  }
 
   if (inputs.mode === 'commit-review') {
     const result = await reviewCommit(inputs);
@@ -80,6 +95,73 @@ interface ProcessIssueResult {
   closed: boolean;
 }
 
+async function drainQueue(octokit: Octokit, inputs: ActionInputs): Promise<void> {
+  let processed = 0;
+  let dropped = 0;
+  let failed = 0;
+
+  for (let index = 0; index < inputs.maxQueueItems; index += 1) {
+    const queue = await readQueue(octokit, inputs);
+    const item = queue.items[0];
+    if (!item) break;
+
+    const attempted = await incrementQueueAttempt(octokit, inputs, item.id);
+    if (!attempted) continue;
+
+    try {
+      await processQueueItem(octokit, attempted, inputs);
+      await removeQueueItem(octokit, inputs, attempted.id);
+      processed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempted.attempts >= inputs.maxQueueAttempts) {
+        core.warning(`Dropping queued ${attempted.kind} #${attempted.number} after ${attempted.attempts} failed attempt(s): ${message}`);
+        await removeQueueItem(octokit, inputs, attempted.id);
+        dropped += 1;
+        continue;
+      }
+      core.warning(`Stopping queue drain after queued ${attempted.kind} #${attempted.number} failed attempt ${attempted.attempts}/${inputs.maxQueueAttempts}: ${message}`);
+      failed += 1;
+      break;
+    }
+  }
+
+  core.setOutput('conclusion', `queue drained ${processed} item(s), dropped ${dropped}, failed ${failed}`);
+  core.setOutput('triage-json', JSON.stringify({ processed, dropped, failed }));
+}
+
+async function processQueueItem(octokit: Octokit, item: QueueItem, inputs: ActionInputs): Promise<void> {
+  const itemInputs = { ...inputs, mode: item.mode };
+  const itemCommand: CommandResolution = { shouldRun: true, mode: item.mode, command: item.command, applyClose: item.applyClose };
+  core.info(`Draining queued ${item.kind} #${item.number} in ${item.mode} mode${item.command ? ` from ${item.command} command` : ''}.`);
+
+  if (item.kind === 'pull_request') {
+    if (item.mode !== 'fix') {
+      core.info('PR review/triage is read-only in this MVP; use @posthog-watcher fix for same-repo PR repair. Removing skipped queued PR item.');
+      return;
+    }
+    await repairPullRequest(octokit, item.number, itemInputs, item.command);
+    return;
+  }
+
+  if (item.command === 'status' || item.command === 'explain' || item.command === 'ask') {
+    await replyToCommand(octokit, item.number, itemInputs, item.command, await queuedCommandBody(octokit, item));
+    return;
+  }
+
+  await processIssue(octokit, item.number, itemInputs, itemCommand, item.source.commentId);
+}
+
+async function queuedCommandBody(octokit: Octokit, item: QueueItem): Promise<string | undefined> {
+  if (!item.source.commentId) return undefined;
+  const { owner, repo } = github.context.repo;
+  const comment = await getIssueComment(octokit, owner, repo, item.source.commentId).catch((error) => {
+    core.warning(`Could not fetch queued command comment ${item.source.commentId}: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  });
+  return comment?.body ?? undefined;
+}
+
 async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
   const issueNumbers = await searchOpenIssueNumbers(octokit, inputs.sweepQuery, inputs.maxSweepItems);
   core.info(`Sweep found ${issueNumbers.length} open issue(s).`);
@@ -104,10 +186,10 @@ async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
   core.setOutput('triage-json', JSON.stringify(results));
 }
 
-async function processIssue(octokit: Octokit, issueNumber: number, inputs: ActionInputs, command: CommandResolution): Promise<ProcessIssueResult> {
+async function processIssue(octokit: Octokit, issueNumber: number, inputs: ActionInputs, command: CommandResolution, forcedCommentId?: number): Promise<ProcessIssueResult> {
   core.info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
 
-  const issue = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments);
+  const issue = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
   const snapshotHash = computeIssueSnapshotHash(issue, inputs.commentMarker);
   const previousSnapshot = findWatcherSnapshot(issue, inputs.commentMarker);
   if (inputs.mode === 'sweep' && previousSnapshot.hash === snapshotHash) {
@@ -280,6 +362,12 @@ function runUrl(): string {
 function isPullRequestPayload(): boolean {
   const payload = github.context.payload as { issue?: { pull_request?: unknown }; pull_request?: unknown };
   return Boolean(payload.issue?.pull_request || payload.pull_request);
+}
+
+function requireOpenAiApiKey(inputs: ActionInputs): void {
+  if (!inputs.openaiApiKey) {
+    throw new Error('openai-api-key is required for modes that process items with pi/OpenAI. It may be omitted only when mode is enqueue.');
+  }
 }
 
 function setOutputs(result: ProcessIssueResult): void {

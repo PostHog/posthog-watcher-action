@@ -5,7 +5,7 @@ import { runPi } from './pi-runner.js';
 import { redactSecrets } from './redact.js';
 import { assessIssueSecurity } from './security.js';
 
-export async function replyToCommand(octokit: Octokit, issueNumber: number, inputs: ActionInputs, command: string): Promise<{ conclusion: string; commentUrl: string }> {
+export async function replyToCommand(octokit: Octokit, issueNumber: number, inputs: ActionInputs, command: string, questionOverride?: string): Promise<{ conclusion: string; commentUrl: string }> {
   const { owner, repo } = github.context.repo;
   const issue = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });
   const labels = issue.data.labels.map((label: string | { name?: string | null }) => (typeof label === 'string' ? label : label.name ?? '')).filter(Boolean);
@@ -34,7 +34,7 @@ export async function replyToCommand(octokit: Octokit, issueNumber: number, inpu
     if (security.sensitive && !inputs.allowSecurityAi) {
       body += 'This item looks security-sensitive, so watcher did not send it to pi/OpenAI. Human review is required.';
     } else {
-      const question = getCommentBody();
+      const question = questionOverride ?? getCommentBody();
       const answer = await runPi({
         inputs,
         tools: ['read', 'grep', 'find', 'ls'],

@@ -1,11 +1,9 @@
 import * as core from '@actions/core';
 import { createDraftPullRequest, defaultBranch, findOpenPullRequestForBranch, type Octokit } from './github.js';
-import { checkDiffGuardrails, parseNumstat } from './guardrails.js';
-import { git, runShell } from './git.js';
+import { git } from './git.js';
 import type { ActionInputs } from './inputs.js';
-import { formatFixPrompt, formatRepairFeedbackPrompt, type IssueSnapshot } from './issue-context.js';
-import { runPi } from './pi-runner.js';
-import { reviewGeneratedDiff } from './review-gate.js';
+import type { IssueSnapshot } from './issue-context.js';
+import { runIssueRepair } from './repair-run.js';
 import type { TriageResult } from './triage-schema.js';
 
 export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs): Promise<string | undefined> {
@@ -36,7 +34,7 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
       await git(['checkout', '-B', branch]);
     }
 
-    const repair = await runRepairLoop(issue, triage, inputs);
+    const repair = await runIssueRepair(issue, triage, inputs);
     if (!repair) {
       return undefined;
     }
@@ -63,57 +61,6 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
     return prUrl;
   } finally {
     await restoreCheckout(originalRef);
-  }
-}
-
-async function runRepairLoop(issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs): Promise<{ files: string[] } | undefined> {
-  const maxAttempts = Math.min(inputs.maxRepairAttempts, 3);
-  let failureSummary = '';
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    core.info(`Starting repair attempt ${attempt}/${maxAttempts}`);
-    await runPi({
-      inputs,
-      tools: ['read', 'grep', 'find', 'ls', 'edit', 'write'],
-      prompt: attempt === 1 ? formatFixPrompt(issue, triage) : formatRepairFeedbackPrompt(issue, triage, attempt, failureSummary),
-      requireText: false,
-    });
-
-    const validationFailure = await runValidation(inputs);
-    const numstat = await git(['diff', '--numstat']);
-    const stats = parseNumstat(numstat);
-    const guardrailFailures = checkDiffGuardrails(stats, {
-      maxChangedFiles: inputs.maxChangedFiles,
-      maxDiffLines: inputs.maxDiffLines,
-    });
-
-    const failures = [...(validationFailure ? [validationFailure] : []), ...guardrailFailures];
-    if (!failures.length) {
-      const reviewGate = await reviewGeneratedDiff(inputs);
-      if (reviewGate.approve) {
-        return { files: stats.files };
-      }
-      failures.push(`independent review gate rejected the diff (${Math.round(reviewGate.confidence * 100)}% confidence): ${reviewGate.reason}`);
-      if (reviewGate.risks.length) failures.push(`review risks: ${reviewGate.risks.join('; ')}`);
-    }
-
-    failureSummary = failures.join('\n');
-    core.warning(`Repair attempt ${attempt} failed:\n- ${failures.join('\n- ')}`);
-  }
-
-  core.warning('Skipping PR because all repair attempts failed.');
-  return undefined;
-}
-
-async function runValidation(inputs: ActionInputs): Promise<string | undefined> {
-  if (!inputs.validationCommand) return undefined;
-
-  try {
-    core.info(`Running validation command: ${inputs.validationCommand}`);
-    await runShell(inputs.validationCommand, process.cwd());
-    return undefined;
-  } catch (error) {
-    return `validation failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
