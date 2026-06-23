@@ -71,6 +71,7 @@ async function runRepairLoop(issue: IssueSnapshot, triage: TriageResult, inputs:
       inputs,
       tools: ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'],
       prompt: attempt === 1 ? formatFixPrompt(issue, triage) : formatRepairFeedbackPrompt(issue, triage, attempt, failureSummary),
+      requireText: false,
     });
 
     const validationFailure = await runValidation(inputs);

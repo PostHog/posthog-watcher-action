@@ -8,6 +8,7 @@ export interface PiRunOptions {
   tools: string[];
   inputs: ActionInputs;
   cwd?: string;
+  requireText?: boolean;
 }
 
 export async function runPi(options: PiRunOptions): Promise<string> {
@@ -48,7 +49,7 @@ export async function runPi(options: PiRunOptions): Promise<string> {
   }
 
   const text = collectAssistantText(result.stdout);
-  if (!text.trim()) {
+  if (!text.trim() && options.requireText !== false) {
     throw new Error(`pi returned no assistant text.${formatPiDiagnostics(result.stdout, result.stderr)}`);
   }
   return text.trim();
@@ -145,6 +146,8 @@ function collectPiErrors(stdout: string): string[] {
 
 function collectMessageErrors(message: PiMessage, errors: string[]): void {
   if (message.errorMessage) errors.push(message.errorMessage);
-  const messageText = extractMessageText(message);
-  if (/error|failed|invalid|not found|unauthorized/i.test(messageText)) errors.push(messageText);
+  if (message.stopReason === 'error') {
+    const messageText = extractMessageText(message);
+    if (messageText) errors.push(messageText);
+  }
 }

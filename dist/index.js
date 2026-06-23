@@ -24044,7 +24044,7 @@ async function runPi(options) {
     throw new Error(`pi exited with code ${result.code}.${formatPiDiagnostics(result.stdout, result.stderr)}`);
   }
   const text = collectAssistantText(result.stdout);
-  if (!text.trim()) {
+  if (!text.trim() && options.requireText !== false) {
     throw new Error(`pi returned no assistant text.${formatPiDiagnostics(result.stdout, result.stderr)}`);
   }
   return text.trim();
@@ -24118,8 +24118,10 @@ function collectPiErrors(stdout) {
 }
 function collectMessageErrors(message, errors) {
   if (message.errorMessage) errors.push(message.errorMessage);
-  const messageText = extractMessageText(message);
-  if (/error|failed|invalid|not found|unauthorized/i.test(messageText)) errors.push(messageText);
+  if (message.stopReason === "error") {
+    const messageText = extractMessageText(message);
+    if (messageText) errors.push(messageText);
+  }
 }
 
 // src/commit-review.ts
@@ -24489,7 +24491,8 @@ async function runRepairLoop(issue2, triage, inputs) {
     await runPi({
       inputs,
       tools: ["read", "grep", "find", "ls", "bash", "edit", "write"],
-      prompt: attempt === 1 ? formatFixPrompt(issue2, triage) : formatRepairFeedbackPrompt(issue2, triage, attempt, failureSummary)
+      prompt: attempt === 1 ? formatFixPrompt(issue2, triage) : formatRepairFeedbackPrompt(issue2, triage, attempt, failureSummary),
+      requireText: false
     });
     const validationFailure = await runValidation(inputs);
     const numstat = await git(["diff", "--numstat"]);

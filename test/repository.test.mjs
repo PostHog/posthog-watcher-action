@@ -42,6 +42,7 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   assert.match(source, /posthog-watcher\/issue-\$\{issue\.number\}/);
   assert.match(source, /findOpenPullRequestForBranch/);
   assert.match(source, /remoteBranchExists/);
+  assert.match(source, /requireText: false/);
 });
 
 test('new MVP features are documented', () => {
