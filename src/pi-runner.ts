@@ -100,7 +100,7 @@ function extractMessageText(message: PiMessage): string {
   if (typeof message.content === 'string') return message.content;
   if (!Array.isArray(message.content)) return '';
   return message.content
-    .map((part) => (part.type === 'text' ? part.text ?? '' : ''))
+    .map((part) => part.text ?? '')
     .join('');
 }
 
@@ -118,9 +118,13 @@ function collectPiErrors(stdout: string): string[] {
   for (const line of stdout.split('\n')) {
     if (!line.trim()) continue;
     try {
-      const event = JSON.parse(line) as { errorMessage?: string; finalError?: string; isError?: boolean; result?: unknown };
+      const event = JSON.parse(line) as PiJsonEvent & { errorMessage?: string; finalError?: string; isError?: boolean; result?: unknown };
       if (event.errorMessage) errors.push(event.errorMessage);
       if (event.finalError) errors.push(event.finalError);
+      if (event.message) {
+        const messageText = extractMessageText(event.message);
+        if (/error|failed|invalid|not found|unauthorized/i.test(messageText)) errors.push(messageText);
+      }
       if (event.isError && event.result) errors.push(typeof event.result === 'string' ? event.result : JSON.stringify(event.result));
     } catch {
       // Ignore non-JSON startup/logging lines.

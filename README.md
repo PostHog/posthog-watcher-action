@@ -49,7 +49,7 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ inputs['issue-number'] }}
-          model: openai/gpt-5.5:high
+          model: openai-codex/gpt-5.5:high
           allow-fix: 'true'
 ```
 
@@ -97,7 +97,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | --- | --- | --- |
 | `openai-api-key` | required | OpenAI API key used by `pi`. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, and PRs. |
-| `model` | `openai/gpt-5.5:high` | pi model identifier with high thinking enabled. |
+| `model` | `openai-codex/gpt-5.5:high` | pi model identifier with high thinking enabled. |
 | `issue-number` | event issue | Issue number to process. |
 | `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, or `commit-review`. |
 | `allow-fix` | `false` | Allows draft PR creation when triage says the fix is straightforward. |

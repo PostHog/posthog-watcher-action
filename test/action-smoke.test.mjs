@@ -16,7 +16,7 @@ test('bundled action entrypoint loads and reads GitHub Action inputs', () => {
       ...process.env,
       'INPUT_OPENAI-API-KEY': 'dummy-openai-key',
       'INPUT_GITHUB-TOKEN': 'dummy-github-token',
-      INPUT_MODEL: 'openai/gpt-5.5:high',
+      INPUT_MODEL: 'openai-codex/gpt-5.5:high',
       'INPUT_DRY-RUN': 'true',
       GITHUB_REPOSITORY: 'PostHog/posthog-watcher-action',
       GITHUB_EVENT_NAME: 'workflow_dispatch',

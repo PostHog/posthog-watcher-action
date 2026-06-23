@@ -55,6 +55,7 @@ test('pi JSON output parser falls back to final assistant messages', () => {
   assert.match(source, /event\.type === 'message_end'/);
   assert.match(source, /event\.type === 'agent_end'/);
   assert.match(source, /formatPiDiagnostics/);
+  assert.match(source, /part\.text/);
 });
 
 test('workflow actions are pinned to full-length SHAs', () => {

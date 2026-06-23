@@ -24076,7 +24076,7 @@ function collectAssistantText(stdout) {
 function extractMessageText(message) {
   if (typeof message.content === "string") return message.content;
   if (!Array.isArray(message.content)) return "";
-  return message.content.map((part) => part.type === "text" ? part.text ?? "" : "").join("");
+  return message.content.map((part) => part.text ?? "").join("");
 }
 function formatPiDiagnostics(stdout, stderr) {
   const errors = collectPiErrors(stdout);
@@ -24099,6 +24099,10 @@ function collectPiErrors(stdout) {
       const event = JSON.parse(line);
       if (event.errorMessage) errors.push(event.errorMessage);
       if (event.finalError) errors.push(event.finalError);
+      if (event.message) {
+        const messageText = extractMessageText(event.message);
+        if (/error|failed|invalid|not found|unauthorized/i.test(messageText)) errors.push(messageText);
+      }
       if (event.isError && event.result) errors.push(typeof event.result === "string" ? event.result : JSON.stringify(event.result));
     } catch {
     }
@@ -24544,7 +24548,7 @@ function getInputs() {
   return {
     openaiApiKey: required("openai-api-key"),
     githubToken: required("github-token"),
-    model: getInput("model") || "openai/gpt-5.5:high",
+    model: getInput("model") || "openai-codex/gpt-5.5:high",
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, "issue-number") : void 0,
     mode,
     allowFix: parseBoolean(getInput("allow-fix")),
