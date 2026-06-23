@@ -17,6 +17,7 @@ import { runPi } from './pi-runner.js';
 import { repairPullRequest } from './pr-repair-runner.js';
 import { getRelatedContext } from './related.js';
 import { assessIssueSecurity } from './security.js';
+import { computeIssueSnapshotHash, findWatcherSnapshot } from './snapshot.js';
 import { writeStateRecord } from './state.js';
 import { parseTriageResult, type TriageResult } from './triage-schema.js';
 
@@ -106,6 +107,19 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   core.info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
 
   const issue = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments);
+  const snapshotHash = computeIssueSnapshotHash(issue, inputs.commentMarker);
+  const previousSnapshot = findWatcherSnapshot(issue, inputs.commentMarker);
+  if (inputs.mode === 'sweep' && previousSnapshot.hash === snapshotHash) {
+    core.info(`Skipping issue #${issue.number} during sweep because its snapshot has not changed.`);
+    return {
+      conclusion: 'skipped unchanged issue during sweep',
+      labels: issue.labels,
+      commentUrl: previousSnapshot.url ?? '',
+      triageJson: JSON.stringify({ skipped: true, reason: 'unchanged', snapshotHash }),
+      closed: false,
+    };
+  }
+
   const repositoryLabels = await listRepositoryLabels(octokit);
   const allowedExistingLabels = inputs.labelAllowlist.filter((label) =>
     repositoryLabels.some((existing) => existing.toLowerCase() === label.toLowerCase()),
@@ -127,7 +141,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
       for (const label of staleLabels) await removeLabel(octokit, issue.number, label);
       await addLabels(octokit, issue.number, managedLabels);
     }
-    const commentBody = buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons);
+    const commentBody = buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons, snapshotHash);
     const commentUrl = inputs.dryRun ? '' : await upsertIssueComment(octokit, issue.number, inputs.commentMarker, commentBody);
     await writeStateRecord(octokit, inputs, {
       kind: 'issue',
@@ -139,7 +153,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
       labels: managedLabels,
       url: issue.url,
       closed: false,
-      data: { security, redacted: true, piCalls: getPiCallCount() },
+      data: { security, redacted: true, snapshotHash, piCalls: getPiCallCount() },
     });
     return {
       conclusion: 'security-sensitive; human review required',
@@ -191,7 +205,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     }
   }
 
-  const commentBody = buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker);
+  const commentBody = buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash);
   let commentUrl = '';
   if (inputs.dryRun) {
     core.info(`[dry-run] Would upsert issue comment:\n${commentBody}`);
@@ -210,7 +224,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     url: issue.url,
     prUrl,
     closed,
-    data: { triage, relatedItems, duplicate, security, fixBlocker, command: command.command, piCalls: getPiCallCount(), runId: github.context.runId, runUrl: runUrl() },
+    data: { triage, relatedItems, duplicate, security, fixBlocker, snapshotHash, command: command.command, piCalls: getPiCallCount(), runId: github.context.runId, runUrl: runUrl() },
   });
 
   return {

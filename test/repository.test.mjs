@@ -84,6 +84,8 @@ test('advanced hardening features are wired', () => {
   const state = read('src/state.ts');
   const prRepair = read('src/pr-repair-runner.ts');
   const commands = read('src/command-replies.ts');
+  const snapshot = read('src/snapshot.ts');
+  const index = read('src/index.ts');
   assert.match(inputs, /maxPiCalls/);
   assert.match(inputs, /piTimeoutMs/);
   assert.match(piRunner, /consumePiCall/);
@@ -92,6 +94,8 @@ test('advanced hardening features are wired', () => {
   assert.match(prRepair, /posthog-watcher:autofix/);
   assert.match(prRepair, /getPullRequestFailureContext/);
   assert.match(commands, /PostHog Watcher \$\{command\}/);
+  assert.match(snapshot, /posthog-watcher-snapshot/);
+  assert.match(index, /skipped unchanged issue during sweep/);
 });
 
 test('pi JSON output parser falls back to final assistant messages', () => {

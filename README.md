@@ -153,6 +153,8 @@ Default managed labels include:
 
 `sweep` mode searches open issues with `sweep-query`, processes at most `max-sweep-items`, and is intended to run with `allow-fix: 'false'` and `allow-close: 'false'` unless explicitly testing on a disposable repository.
 
+Sweep stores a deterministic snapshot hash in the marker-backed watcher comment and skips an issue on later sweeps when the title, body, non-managed labels, and non-watcher comments have not changed. This prevents re-triaging the same unchanged issues every scheduled run.
+
 A sample scheduled/manual workflow lives in `.github/workflows/sweep.yml`.
 
 ## Durable state and dashboard
