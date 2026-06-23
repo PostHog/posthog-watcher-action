@@ -1,10 +1,9 @@
 import * as core from '@actions/core';
-import * as github from '@actions/github';
-import { createDraftPullRequest, defaultBranch, type Octokit } from './github.js';
+import { createDraftPullRequest, defaultBranch, findOpenPullRequestForBranch, type Octokit } from './github.js';
 import { checkDiffGuardrails, parseNumstat } from './guardrails.js';
 import { git, runShell } from './git.js';
 import type { ActionInputs } from './inputs.js';
-import { formatFixPrompt, type IssueSnapshot } from './issue-context.js';
+import { formatFixPrompt, formatRepairFeedbackPrompt, type IssueSnapshot } from './issue-context.js';
 import { runPi } from './pi-runner.js';
 import type { TriageResult } from './triage-schema.js';
 
@@ -18,54 +17,97 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
   }
 
   const base = defaultBranch();
-  const branch = `posthog-watcher/issue-${issue.number}-${github.context.runId}`;
+  const branch = `posthog-watcher/issue-${issue.number}`;
+  const existingPr = await findOpenPullRequestForBranch(octokit, branch);
 
   if (inputs.dryRun) {
-    core.info(`[dry-run] Would create branch ${branch}, run pi fix, and open a draft PR.`);
-    return undefined;
+    core.info(`[dry-run] Would ${existingPr ? `update existing PR ${existingPr.url}` : `create branch ${branch} and open a draft PR`}.`);
+    return existingPr?.url;
   }
 
-  await git(['checkout', '-B', branch]);
-
-  await runPi({
-    inputs,
-    tools: ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'],
-    prompt: formatFixPrompt(issue, triage),
-  });
-
-  if (inputs.validationCommand) {
-    core.info(`Running validation command: ${inputs.validationCommand}`);
-    await runShell(inputs.validationCommand, process.cwd());
+  if (existingPr) {
+    core.info(`Reusing existing draft PR branch ${branch}: ${existingPr.url}`);
+    await checkoutExistingBranch(branch);
+  } else {
+    await git(['checkout', '-B', branch]);
   }
 
-  const numstat = await git(['diff', '--numstat']);
-  const stats = parseNumstat(numstat);
-  const failures = checkDiffGuardrails(stats, {
-    maxChangedFiles: inputs.maxChangedFiles,
-    maxDiffLines: inputs.maxDiffLines,
-  });
-
-  if (failures.length) {
-    core.warning(`Skipping PR because guardrails failed:\n- ${failures.join('\n- ')}`);
+  const repair = await runRepairLoop(issue, triage, inputs);
+  if (!repair) {
     await git(['checkout', '-']);
     return undefined;
   }
 
   await git(['config', 'user.name', 'posthog-watcher-action']);
   await git(['config', 'user.email', 'posthog-watcher-action@users.noreply.github.com']);
-  await git(['add', '--', ...stats.files]);
+  await git(['add', '--', ...repair.files]);
   await git(['commit', '-m', `Fix #${issue.number}: ${issue.title.slice(0, 80)}`]);
   await git(['push', '--set-upstream', 'origin', branch]);
+
+  if (existingPr) {
+    core.info(`Updated existing draft PR: ${existingPr.url}`);
+    return existingPr.url;
+  }
 
   const prUrl = await createDraftPullRequest(octokit, {
     title: `Fix #${issue.number}: ${issue.title}`,
     head: branch,
     base,
-    body: buildPullRequestBody(issue, triage, stats.files, inputs.validationCommand),
+    body: buildPullRequestBody(issue, triage, repair.files, inputs.validationCommand),
   });
 
   core.info(`Created draft PR: ${prUrl}`);
   return prUrl;
+}
+
+async function runRepairLoop(issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs): Promise<{ files: string[] } | undefined> {
+  const maxAttempts = Math.min(inputs.maxRepairAttempts, 3);
+  let failureSummary = '';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    core.info(`Starting repair attempt ${attempt}/${maxAttempts}`);
+    await runPi({
+      inputs,
+      tools: ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'],
+      prompt: attempt === 1 ? formatFixPrompt(issue, triage) : formatRepairFeedbackPrompt(issue, triage, attempt, failureSummary),
+    });
+
+    const validationFailure = await runValidation(inputs);
+    const numstat = await git(['diff', '--numstat']);
+    const stats = parseNumstat(numstat);
+    const guardrailFailures = checkDiffGuardrails(stats, {
+      maxChangedFiles: inputs.maxChangedFiles,
+      maxDiffLines: inputs.maxDiffLines,
+    });
+
+    const failures = [...(validationFailure ? [validationFailure] : []), ...guardrailFailures];
+    if (!failures.length) {
+      return { files: stats.files };
+    }
+
+    failureSummary = failures.join('\n');
+    core.warning(`Repair attempt ${attempt} failed:\n- ${failures.join('\n- ')}`);
+  }
+
+  core.warning('Skipping PR because all repair attempts failed.');
+  return undefined;
+}
+
+async function runValidation(inputs: ActionInputs): Promise<string | undefined> {
+  if (!inputs.validationCommand) return undefined;
+
+  try {
+    core.info(`Running validation command: ${inputs.validationCommand}`);
+    await runShell(inputs.validationCommand, process.cwd());
+    return undefined;
+  } catch (error) {
+    return `validation failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+async function checkoutExistingBranch(branch: string): Promise<void> {
+  await git(['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+  await git(['checkout', '-B', branch, `origin/${branch}`]);
 }
 
 function shouldAttemptFix(triage: TriageResult, inputs: ActionInputs): boolean {

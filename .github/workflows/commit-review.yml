@@ -1,0 +1,33 @@
+name: Commit review
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit-sha:
+        description: Commit SHA to review. Defaults to the workflow SHA.
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.commit-sha || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  commit-review:
+    name: Commit review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Review commit
+        uses: ./
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: commit-review
+          commit-sha: ${{ inputs.commit-sha }}

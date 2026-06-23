@@ -1,3 +1,4 @@
+import type { RelatedItem } from './related.js';
 import type { TriageResult } from './triage-schema.js';
 
 export interface IssueSnapshot {
@@ -17,7 +18,7 @@ export interface IssueSnapshot {
   }>;
 }
 
-export function formatIssuePrompt(issue: IssueSnapshot, allowedLabels: string[], mode: string): string {
+export function formatIssuePrompt(issue: IssueSnapshot, allowedLabels: string[], mode: string, relatedItems: RelatedItem[]): string {
   return `You are triaging a GitHub issue for ${issue.owner}/${issue.repo}.
 
 Use the karpathy-guidelines skill when reasoning about code changes: be explicit about assumptions, keep changes simple, and avoid speculative fixes.
@@ -38,6 +39,9 @@ ${fence(issue.body || '(empty)')}
 Recent comments:
 ${issue.comments.length ? issue.comments.map((comment, index) => `Comment ${index + 1} by ${comment.author} at ${comment.createdAt} (${comment.url}):\n${fence(comment.body)}`).join('\n\n') : '(none)'}
 
+Related same-repo issues/PRs (advisory only; verify before relying on them):
+${formatRelatedItems(relatedItems)}
+
 Return ONLY valid JSON matching this exact shape:
 {
   "conclusion": "short human-readable verdict",
@@ -56,6 +60,13 @@ Return ONLY valid JSON matching this exact shape:
     "reason": "why a small PR is or is not appropriate",
     "suggestedApproach": "minimal implementation approach if straightforward, otherwise empty",
     "risk": "low | medium | high"
+  },
+  "closeProposal": {
+    "propose": false,
+    "category": "duplicate | already-fixed | not-reproducible | out-of-scope | insufficient-info | none",
+    "confidence": 0.0,
+    "reason": "evidence-backed reason for proposing close, otherwise empty",
+    "canonicalUrl": "same-repo canonical issue/PR URL when category is duplicate/already-fixed, otherwise empty"
   }
 }
 
@@ -63,6 +74,8 @@ Rules:
 - Do not invent labels outside the allowed list.
 - Prefer needs-info when the report lacks reproduction details.
 - Use fix.risk and confidence to describe whether a fix is safe; the action derives fix.straightforward from allow-fix, confidence, needsMoreInfo, and risk.
+- Close proposals are recommendations only. Do not close issues.
+- Propose close only with strong evidence from this issue, repository files, or related same-repo context.
 - If uncertain, lower confidence and explain what information is missing.
 `;
 }
@@ -87,6 +100,33 @@ Requirements:
 - If the fix is not actually straightforward after inspection, stop without editing and explain why.
 - When done, summarize changed files and validation commands run.
 `;
+}
+
+export function formatRepairFeedbackPrompt(issue: IssueSnapshot, triage: TriageResult, attempt: number, failureSummary: string): string {
+  return `Repair attempt ${attempt} for GitHub issue #${issue.number}.
+
+Follow the karpathy-guidelines skill. The previous fix attempt failed validation or guardrails. Make only minimal corrections for the failures below. Do not expand scope or refactor unrelated code.
+
+Issue title: ${issue.title}
+
+Triage summary:
+${JSON.stringify(triage, null, 2)}
+
+Failure summary:
+${fence(failureSummary)}
+
+Requirements:
+- Fix only the reported validation/guardrail failures.
+- Preserve the original minimal issue fix.
+- If the failure cannot be repaired safely, stop without broad changes and explain why.
+`;
+}
+
+function formatRelatedItems(items: RelatedItem[]): string {
+  if (!items.length) return '(none)';
+  return items
+    .map((item) => `- #${item.number} ${item.type} ${item.state}: ${item.title}\n  URL: ${item.url}\n  Labels: ${item.labels.join(', ') || '(none)'}\n  Found by: ${item.reason}`)
+    .join('\n');
 }
 
 function fence(value: string): string {

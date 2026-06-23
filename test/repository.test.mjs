@@ -28,3 +28,30 @@ test('readme declares experimental PostHog SDK scope', () => {
   assert.match(readme, /Experimental \/ WIP/);
   assert.match(readme, /PostHog SDK repositories/);
 });
+
+test('maintainer issue comment commands are documented', () => {
+  const readme = read('README.md');
+  assert.match(readme, /@posthog-watcher triage/);
+  assert.match(readme, /@posthog-watcher investigate/);
+  assert.match(readme, /@posthog-watcher fix/);
+});
+
+test('fix PRs use stable per-issue branches for reuse', () => {
+  const source = read('src/fix-runner.ts');
+  assert.match(source, /posthog-watcher\/issue-\$\{issue\.number\}/);
+  assert.match(source, /findOpenPullRequestForBranch/);
+});
+
+test('new MVP features are documented', () => {
+  const readme = read('README.md');
+  assert.match(readme, /Repair loop/);
+  assert.match(readme, /Related context and close proposals/);
+  assert.match(readme, /Commit reviews/);
+  assert.match(readme, /never closes issues/);
+});
+
+test('workflow actions are pinned to full-length SHAs', () => {
+  const workflows = [read('.github/workflows/ci.yml'), read('.github/workflows/commit-review.yml'), read('.github/actions/setup/action.yml')].join('\n');
+  assert.doesNotMatch(workflows, /uses:\s+[^\s]+@v\d/);
+  assert.match(workflows, /actions\/checkout@[0-9a-f]{40}/);
+});

@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 
-export type Mode = 'auto' | 'triage' | 'investigate' | 'fix';
+export type Mode = 'auto' | 'triage' | 'investigate' | 'fix' | 'commit-review';
 
 export interface ActionInputs {
   openaiApiKey: string;
@@ -14,7 +14,10 @@ export interface ActionInputs {
   maxComments: number;
   maxChangedFiles: number;
   maxDiffLines: number;
+  maxRepairAttempts: number;
+  maxRelatedItems: number;
   validationCommand: string;
+  commitSha?: string;
   commentMarker: string;
   piVersion: string;
 }
@@ -35,7 +38,10 @@ export function getInputs(): ActionInputs {
     maxComments: parsePositiveInt(core.getInput('max-comments') || '20', 'max-comments'),
     maxChangedFiles: parsePositiveInt(core.getInput('max-changed-files') || '5', 'max-changed-files'),
     maxDiffLines: parsePositiveInt(core.getInput('max-diff-lines') || '500', 'max-diff-lines'),
+    maxRepairAttempts: parsePositiveInt(core.getInput('max-repair-attempts') || '2', 'max-repair-attempts'),
+    maxRelatedItems: parsePositiveInt(core.getInput('max-related-items') || '5', 'max-related-items'),
     validationCommand: core.getInput('validation-command'),
+    commitSha: core.getInput('commit-sha') || undefined,
     commentMarker: core.getInput('comment-marker') || '<!-- posthog-watcher-action -->',
     piVersion: core.getInput('pi-version') || '0.79.10',
   };
@@ -67,8 +73,8 @@ function parseCsv(value: string): string[] {
 }
 
 function normalizeMode(value: string): Mode {
-  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix') {
+  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix' || value === 'commit-review') {
     return value;
   }
-  throw new Error('mode must be one of: auto, triage, investigate, fix');
+  throw new Error('mode must be one of: auto, triage, investigate, fix, commit-review');
 }

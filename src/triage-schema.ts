@@ -16,6 +16,13 @@ export interface TriageResult {
     suggestedApproach: string;
     risk: 'low' | 'medium' | 'high';
   };
+  closeProposal: {
+    propose: boolean;
+    category: 'duplicate' | 'already-fixed' | 'not-reproducible' | 'out-of-scope' | 'insufficient-info' | 'none';
+    confidence: number;
+    reason: string;
+    canonicalUrl: string;
+  };
 }
 
 export function parseTriageResult(text: string): TriageResult {
@@ -39,6 +46,13 @@ function normalizeTriageResult(value: unknown): TriageResult {
   const object = asRecord(value);
   const investigation = asRecord(object.investigation ?? {});
   const fix = asRecord(object.fix ?? {});
+  const closeProposal = asRecord(object.closeProposal ?? {});
+  const closeProposalCategory = enumValue(
+    closeProposal.category,
+    ['duplicate', 'already-fixed', 'not-reproducible', 'out-of-scope', 'insufficient-info', 'none'],
+    'none',
+  );
+  const closeProposalConfidence = clampNumber(closeProposal.confidence, 0, 1, 0);
 
   return {
     conclusion: stringValue(object.conclusion, stringValue(object.issueType, 'unknown')),
@@ -57,6 +71,13 @@ function normalizeTriageResult(value: unknown): TriageResult {
       reason: stringValue(fix.reason, ''),
       suggestedApproach: stringValue(fix.suggestedApproach, ''),
       risk: enumValue(fix.risk, ['low', 'medium', 'high'], 'high'),
+    },
+    closeProposal: {
+      propose: Boolean(closeProposal.propose) && closeProposalConfidence >= 0.9 && closeProposalCategory !== 'none',
+      category: closeProposalCategory,
+      confidence: closeProposalConfidence,
+      reason: stringValue(closeProposal.reason, ''),
+      canonicalUrl: stringValue(closeProposal.canonicalUrl, ''),
     },
   };
 }

@@ -78,6 +78,19 @@ export async function upsertIssueComment(octokit: Octokit, issueNumber: number, 
   return created.data.html_url;
 }
 
+export async function findOpenPullRequestForBranch(octokit: Octokit, branch: string): Promise<{ number: number; url: string } | undefined> {
+  const { owner, repo } = github.context.repo;
+  const pulls = await octokit.rest.pulls.list({
+    owner,
+    repo,
+    state: 'open',
+    head: `${owner}:${branch}`,
+    per_page: 10,
+  });
+  const pull = pulls.data[0];
+  return pull ? { number: pull.number, url: pull.html_url } : undefined;
+}
+
 export async function createDraftPullRequest(octokit: Octokit, params: {
   title: string;
   head: string;
