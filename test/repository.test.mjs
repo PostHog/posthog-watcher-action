@@ -56,6 +56,13 @@ test('pre-existing related fixes block duplicate fix PRs', () => {
   assert.match(readme, /related open PR contains closing syntax/);
 });
 
+test('security policy uses word-boundary matching for short terms', () => {
+  const source = read('src/security.ts');
+  assert.match(source, /SECURITY_PATTERNS/);
+  assert.match(source, /\\\\b/);
+  assert.doesNotMatch(source, /haystack\.includes/);
+});
+
 test('new MVP features are documented', () => {
   const readme = read('README.md');
   assert.match(readme, /Repair loop/);

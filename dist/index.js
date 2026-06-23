@@ -24896,7 +24896,7 @@ async function searchClosingPullRequests(octokit, issue2, limit) {
 }
 async function searchByTitle(octokit, issue2, limit) {
   const { owner, repo } = context2.repo;
-  const terms = issue2.title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((term) => term.length >= 4).slice(0, 5);
+  const terms = issue2.title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((term2) => term2.length >= 4).slice(0, 5);
   if (!terms.length) return [];
   const response = await octokit.rest.search.issuesAndPullRequests({
     q: `repo:${owner}/${repo} is:open ${terms.join(" ")}`,
@@ -24917,24 +24917,33 @@ function escapeRegExp(value) {
 }
 
 // src/security.ts
-var SECURITY_TERMS = [
-  "security",
-  "vulnerability",
-  "xss",
-  "csrf",
-  "rce",
-  "token",
-  "secret",
-  "credential",
-  "auth bypass",
-  "authentication bypass",
-  "authorization bypass",
-  "sql injection"
+var SECURITY_PATTERNS = [
+  term("security"),
+  term("vulnerability"),
+  term("xss"),
+  term("csrf"),
+  term("rce"),
+  term("token"),
+  term("secret"),
+  term("credential"),
+  phrase("auth bypass"),
+  phrase("authentication bypass"),
+  phrase("authorization bypass"),
+  phrase("sql injection")
 ];
 function assessIssueSecurity(issue2) {
   const haystack = [issue2.title, issue2.body, ...issue2.labels, ...issue2.comments.map((comment) => comment.body)].join("\n").toLowerCase();
-  const reasons = SECURITY_TERMS.filter((term) => haystack.includes(term));
+  const reasons = SECURITY_PATTERNS.filter(({ pattern }) => pattern.test(haystack)).map(({ reason }) => reason);
   return { sensitive: reasons.length > 0, reasons };
+}
+function term(value) {
+  return { reason: value, pattern: new RegExp(`\\b${escapeRegExp2(value)}\\b`, "i") };
+}
+function phrase(value) {
+  return { reason: value, pattern: new RegExp(`\\b${value.split(/\s+/).map(escapeRegExp2).join("\\s+")}\\b`, "i") };
+}
+function escapeRegExp2(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // src/state.ts
