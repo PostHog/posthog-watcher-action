@@ -192,7 +192,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     await addLabels(octokit, issue.number, allLabels);
   }
 
-  const fixBlocker = findPreExistingFixBlocker(issue, relatedItems, triage, duplicate);
+  const fixBlocker = findPreExistingFixBlocker(issue, relatedItems, triage, duplicate) ?? fixCommandBlocker(inputs, command);
   if (fixBlocker) core.info(`Skipping fix PR: ${fixBlocker}`);
   const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs);
   let closed = false;
@@ -236,6 +236,13 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     triageJson: JSON.stringify(triage),
     closed,
   };
+}
+
+function fixCommandBlocker(inputs: ActionInputs, command: CommandResolution): string | undefined {
+  if (!inputs.requireFixCommand) return undefined;
+  return command.command === 'fix' || command.command === 'fix-ci' || command.command === 'address-review' || command.command === 'rebase'
+    ? undefined
+    : 'require-fix-command is enabled and no trusted fix command was provided';
 }
 
 function shouldCloseIssue(

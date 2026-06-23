@@ -24108,8 +24108,6 @@ async function runPi(options) {
     `@earendil-works/pi-coding-agent@${options.inputs.piVersion}`,
     "pi",
     ...options.inputs.approveProjectResources ? ["--approve"] : [],
-    "--api-key",
-    options.inputs.openaiApiKey,
     "--mode",
     "json",
     "--no-session",
@@ -24138,13 +24136,14 @@ async function runPi(options) {
   }
   return text.trim();
 }
-function sanitizedEnv(_openaiApiKey) {
+function sanitizedEnv(openaiApiKey) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     if (/TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL/i.test(key) || key.startsWith("INPUT_") || key === "GH_TOKEN" || key === "GITHUB_TOKEN") {
       delete env[key];
     }
   }
+  env.OPENAI_API_KEY = openaiApiKey;
   return env;
 }
 function collectAssistantText(stdout) {
@@ -24517,8 +24516,9 @@ function assessDuplicate(issue2, relatedItems) {
   let best;
   for (const item of relatedItems) {
     if (item.number >= issue2.number || item.type !== "issue") continue;
-    const score = similarity(issueText(issue2), `${item.title}
-${item.bodyExcerpt}`);
+    const score = Math.max(similarity(issueText(issue2), `${item.title}
+${item.bodyExcerpt}`), signalSimilarity(issueText(issue2), `${item.title}
+${item.bodyExcerpt}`));
     if (!best || score > best.score) best = { item, score };
   }
   if (best && best.score >= 0.42) {
@@ -24534,6 +24534,28 @@ ${item.bodyExcerpt}`);
 function issueText(issue2) {
   return `${issue2.title}
 ${issue2.body}`;
+}
+function signalSimilarity(left, right) {
+  const leftSignals = signals(left);
+  const rightSignals = signals(right);
+  if (!leftSignals.size || !rightSignals.size) return 0;
+  const intersection = [...leftSignals].filter((signal) => rightSignals.has(signal)).length;
+  const union = (/* @__PURE__ */ new Set([...leftSignals, ...rightSignals])).size;
+  return intersection / union;
+}
+function signals(value) {
+  const matches = [
+    ...value.matchAll(/\b(?:GET|POST|PUT|PATCH|DELETE)\s+([^\s'"`]+)/gi),
+    ...value.matchAll(/curl\s+['"]?([^'"\s`]+)/gi),
+    ...value.matchAll(/https?:\/\/[^\s'"`]+/gi),
+    ...value.matchAll(/\/[a-z0-9_/-]+\?[a-z0-9_=&.-]+/gi),
+    ...value.matchAll(/\{\s*"[^"]+"\s*:\s*[^}]+\}/gi),
+    ...value.matchAll(/(?:expected|expects?|should|actual|current)[^\n]{0,120}/gi),
+    ...value.matchAll(/(?:test|spec)(?: named)? [`'"]([^`'"]+)[`'"]/gi)
+  ];
+  return new Set(
+    matches.map((match) => (match[1] ?? match[0]).toLowerCase().replace(/\s+/g, " ").trim()).filter((match) => match.length >= 4)
+  );
 }
 function similarity(left, right) {
   const leftTokens = tokens(left);
@@ -24943,6 +24965,7 @@ function getInputs() {
     allowFix: parseBoolean(getInput("allow-fix")),
     allowClose: parseBoolean(getInput("allow-close")),
     allowSecurityAi: parseBoolean(getInput("allow-security-ai")),
+    requireFixCommand: parseBoolean(getInput("require-fix-command")),
     dryRun: parseBoolean(getInput("dry-run")),
     labelAllowlist: parseCsv(getInput("labels")),
     managedLabelPrefix: getInput("managed-label-prefix") || "posthog-watcher:",
@@ -25045,6 +25068,12 @@ async function getPullRequestFailureContext(octokit, pullNumber, headSha) {
   for (const check of checkRuns?.data.check_runs ?? []) {
     if (check.conclusion && check.conclusion !== "success" && check.conclusion !== "neutral" && check.conclusion !== "skipped") {
       parts.push(`Check ${check.name}: ${check.conclusion} ${check.html_url}`);
+      const jobId = extractJobId(check.html_url ?? "");
+      if (jobId) {
+        const log = await downloadJobLogSnippet(octokit, owner, repo, jobId);
+        if (log) parts.push(`Log snippet for ${check.name}:
+${log}`);
+      }
     }
   }
   const comments = await octokit.paginate(octokit.rest.pulls.listReviewComments, { owner, repo, pull_number: pullNumber, per_page: 20 }).catch(() => []);
@@ -25052,6 +25081,24 @@ async function getPullRequestFailureContext(octokit, pullNumber, headSha) {
     if (comment.body) parts.push(`Review comment on ${comment.path ?? "unknown"}: ${comment.body.slice(0, 500)}`);
   }
   return parts.join("\n");
+}
+function extractJobId(url) {
+  const match = url.match(/\/actions\/runs\/\d+\/job\/(\d+)/);
+  return match?.[1] ? Number(match[1]) : void 0;
+}
+async function downloadJobLogSnippet(octokit, owner, repo, jobId) {
+  try {
+    const response = await octokit.request("GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs", {
+      owner,
+      repo,
+      job_id: jobId
+    });
+    const data = typeof response.data === "string" ? response.data : Buffer.from(response.data).toString("utf8");
+    return data.split("\n").slice(-120).join("\n").slice(-6e3);
+  } catch (error2) {
+    debug(`Could not fetch logs for job ${jobId}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    return void 0;
+  }
 }
 async function repairPullRequest(octokit, pullNumber, inputs, command) {
   const { owner, repo } = context2.repo;
@@ -25594,7 +25641,7 @@ async function processIssue(octokit, issueNumber, inputs, command) {
     for (const label of staleLabels) await removeLabel(octokit, issue2.number, label);
     await addLabels(octokit, issue2.number, allLabels);
   }
-  const fixBlocker = findPreExistingFixBlocker(issue2, relatedItems, triage, duplicate);
+  const fixBlocker = findPreExistingFixBlocker(issue2, relatedItems, triage, duplicate) ?? fixCommandBlocker(inputs, command);
   if (fixBlocker) info(`Skipping fix PR: ${fixBlocker}`);
   const prUrl = security.sensitive || fixBlocker ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs);
   let closed = false;
@@ -25636,6 +25683,10 @@ ${commentBody}`);
     triageJson: JSON.stringify(triage),
     closed
   };
+}
+function fixCommandBlocker(inputs, command) {
+  if (!inputs.requireFixCommand) return void 0;
+  return command.command === "fix" || command.command === "fix-ci" || command.command === "address-review" || command.command === "rebase" ? void 0 : "require-fix-command is enabled and no trusted fix command was provided";
 }
 function shouldCloseIssue(inputs, command, proposed, confidence, duplicate, duplicateScore, securitySensitive) {
   return Boolean(command.applyClose && inputs.allowClose && !securitySensitive && (proposed && confidence >= 0.95 || duplicate && duplicateScore >= 0.55));

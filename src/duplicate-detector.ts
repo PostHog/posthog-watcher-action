@@ -18,7 +18,7 @@ export function assessDuplicate(issue: IssueSnapshot, relatedItems: RelatedItem[
   let best: { item: RelatedItem; score: number } | undefined;
   for (const item of relatedItems) {
     if (item.number >= issue.number || item.type !== 'issue') continue;
-    const score = similarity(issueText(issue), `${item.title}\n${item.bodyExcerpt}`);
+    const score = Math.max(similarity(issueText(issue), `${item.title}\n${item.bodyExcerpt}`), signalSimilarity(issueText(issue), `${item.title}\n${item.bodyExcerpt}`));
     if (!best || score > best.score) best = { item, score };
   }
 
@@ -36,6 +36,32 @@ export function assessDuplicate(issue: IssueSnapshot, relatedItems: RelatedItem[
 
 function issueText(issue: IssueSnapshot): string {
   return `${issue.title}\n${issue.body}`;
+}
+
+function signalSimilarity(left: string, right: string): number {
+  const leftSignals = signals(left);
+  const rightSignals = signals(right);
+  if (!leftSignals.size || !rightSignals.size) return 0;
+  const intersection = [...leftSignals].filter((signal) => rightSignals.has(signal)).length;
+  const union = new Set([...leftSignals, ...rightSignals]).size;
+  return intersection / union;
+}
+
+function signals(value: string): Set<string> {
+  const matches = [
+    ...value.matchAll(/\b(?:GET|POST|PUT|PATCH|DELETE)\s+([^\s'"`]+)/gi),
+    ...value.matchAll(/curl\s+['"]?([^'"\s`]+)/gi),
+    ...value.matchAll(/https?:\/\/[^\s'"`]+/gi),
+    ...value.matchAll(/\/[a-z0-9_/-]+\?[a-z0-9_=&.-]+/gi),
+    ...value.matchAll(/\{\s*"[^"]+"\s*:\s*[^}]+\}/gi),
+    ...value.matchAll(/(?:expected|expects?|should|actual|current)[^\n]{0,120}/gi),
+    ...value.matchAll(/(?:test|spec)(?: named)? [`'"]([^`'"]+)[`'"]/gi),
+  ];
+  return new Set(
+    matches
+      .map((match) => (match[1] ?? match[0]).toLowerCase().replace(/\s+/g, ' ').trim())
+      .filter((match) => match.length >= 4),
+  );
 }
 
 function similarity(left: string, right: string): number {

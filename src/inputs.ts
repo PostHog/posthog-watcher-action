@@ -11,6 +11,7 @@ export interface ActionInputs {
   allowFix: boolean;
   allowClose: boolean;
   allowSecurityAi: boolean;
+  requireFixCommand: boolean;
   dryRun: boolean;
   labelAllowlist: string[];
   managedLabelPrefix: string;
@@ -48,6 +49,7 @@ export function getInputs(): ActionInputs {
     allowFix: parseBoolean(core.getInput('allow-fix')),
     allowClose: parseBoolean(core.getInput('allow-close')),
     allowSecurityAi: parseBoolean(core.getInput('allow-security-ai')),
+    requireFixCommand: parseBoolean(core.getInput('require-fix-command')),
     dryRun: parseBoolean(core.getInput('dry-run')),
     labelAllowlist: parseCsv(core.getInput('labels')),
     managedLabelPrefix: core.getInput('managed-label-prefix') || 'posthog-watcher:',

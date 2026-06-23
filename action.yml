@@ -38,6 +38,10 @@ inputs:
     description: Whether suspected security-sensitive reports may be sent to pi/OpenAI. Defaults to false.
     required: false
     default: 'false'
+  require-fix-command:
+    description: Require a trusted @posthog-watcher fix command before opening or updating fix PRs
+    required: false
+    default: 'false'
   dry-run:
     description: Log intended GitHub mutations without applying them
     required: false

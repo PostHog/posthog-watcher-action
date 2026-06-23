@@ -57,6 +57,9 @@ test('pre-existing related fixes block duplicate fix PRs', () => {
   assert.match(source, /title-search/);
   assert.match(source, /older related issue/);
   assert.match(source, /titleSimilarity/);
+  const detector = read('src/duplicate-detector.ts');
+  assert.match(detector, /signalSimilarity/);
+  assert.match(detector, /curl/);
   assert.match(source, /duplicate/);
   assert.match(source, /already-fixed/);
   assert.match(index, /findPreExistingFixBlocker/);
@@ -92,6 +95,7 @@ test('new MVP features are documented', () => {
   assert.match(readme, /approve-project-resources` \| `false`/);
   assert.match(readme, /posthog-watcher-\$\{\{ github\.repository \}\}/);
   assert.match(readme, /cancel-in-progress: false/);
+  assert.match(readme, /require-fix-command/);
   assert.match(readme, /max-comments/);
   assert.match(readme, /max-changed-files/);
   assert.match(readme, /comment-marker/);
@@ -109,9 +113,11 @@ test('advanced hardening features are wired', () => {
   assert.match(inputs, /piTimeoutMs/);
   assert.match(piRunner, /consumePiCall/);
   assert.match(piRunner, /--approve/);
-  assert.match(piRunner, /--api-key/);
+  assert.doesNotMatch(piRunner, /--api-key/);
+  assert.match(piRunner, /OPENAI_API_KEY/);
   assert.match(piRunner, /TOKEN\|KEY\|SECRET\|PASSWORD\|CREDENTIAL/);
   assert.match(inputs, /approveProjectResources/);
+  assert.match(inputs, /requireFixCommand/);
   assert.match(state, /index\.json/);
   assert.match(state, /isConflictLike/);
   assert.match(prRepair, /posthog-watcher:autofix/);

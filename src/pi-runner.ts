@@ -26,8 +26,6 @@ export async function runPi(options: PiRunOptions): Promise<string> {
     `@earendil-works/pi-coding-agent@${options.inputs.piVersion}`,
     'pi',
     ...(options.inputs.approveProjectResources ? ['--approve'] : []),
-    '--api-key',
-    options.inputs.openaiApiKey,
     '--mode',
     'json',
     '--no-session',
@@ -61,13 +59,14 @@ export async function runPi(options: PiRunOptions): Promise<string> {
   return text.trim();
 }
 
-function sanitizedEnv(_openaiApiKey: string): NodeJS.ProcessEnv {
+function sanitizedEnv(openaiApiKey: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) {
     if (/TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL/i.test(key) || key.startsWith('INPUT_') || key === 'GH_TOKEN' || key === 'GITHUB_TOKEN') {
       delete env[key];
     }
   }
+  env.OPENAI_API_KEY = openaiApiKey;
   return env;
 }
 

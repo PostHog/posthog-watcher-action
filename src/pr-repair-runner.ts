@@ -26,6 +26,11 @@ async function getPullRequestFailureContext(octokit: Octokit, pullNumber: number
   for (const check of checkRuns?.data.check_runs ?? []) {
     if (check.conclusion && check.conclusion !== 'success' && check.conclusion !== 'neutral' && check.conclusion !== 'skipped') {
       parts.push(`Check ${check.name}: ${check.conclusion} ${check.html_url}`);
+      const jobId = extractJobId(check.html_url ?? '');
+      if (jobId) {
+        const log = await downloadJobLogSnippet(octokit, owner, repo, jobId);
+        if (log) parts.push(`Log snippet for ${check.name}:\n${log}`);
+      }
     }
   }
   const comments = await octokit.paginate(octokit.rest.pulls.listReviewComments, { owner, repo, pull_number: pullNumber, per_page: 20 }).catch(() => [] as Array<{ path?: string; body?: string }>);
@@ -33,6 +38,26 @@ async function getPullRequestFailureContext(octokit: Octokit, pullNumber: number
     if (comment.body) parts.push(`Review comment on ${comment.path ?? 'unknown'}: ${comment.body.slice(0, 500)}`);
   }
   return parts.join('\n');
+}
+
+function extractJobId(url: string): number | undefined {
+  const match = url.match(/\/actions\/runs\/\d+\/job\/(\d+)/);
+  return match?.[1] ? Number(match[1]) : undefined;
+}
+
+async function downloadJobLogSnippet(octokit: Octokit, owner: string, repo: string, jobId: number): Promise<string | undefined> {
+  try {
+    const response = await octokit.request('GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs', {
+      owner,
+      repo,
+      job_id: jobId,
+    });
+    const data = typeof response.data === 'string' ? response.data : Buffer.from(response.data as ArrayBuffer).toString('utf8');
+    return data.split('\n').slice(-120).join('\n').slice(-6000);
+  } catch (error) {
+    core.debug(`Could not fetch logs for job ${jobId}: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }
 
 export async function repairPullRequest(octokit: Octokit, pullNumber: number, inputs: ActionInputs, command?: string): Promise<PullRequestRepairResult> {
