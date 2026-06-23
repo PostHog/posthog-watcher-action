@@ -45,6 +45,7 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   assert.match(source, /requireText: false/);
   assert.match(source, /restoreCheckout/);
   assert.match(source, /reset', '--hard/);
+  assert.match(source, /independent review gate rejected the diff/);
 });
 
 test('pre-existing related fixes block duplicate fix PRs', () => {

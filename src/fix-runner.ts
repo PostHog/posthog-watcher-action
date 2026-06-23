@@ -41,12 +41,6 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
       return undefined;
     }
 
-    const reviewGate = await reviewGeneratedDiff(inputs);
-    if (!reviewGate.approve) {
-      core.warning(`Skipping PR because independent review gate rejected the diff: ${reviewGate.reason}`);
-      return undefined;
-    }
-
     await git(['config', 'user.name', 'posthog-watcher-action']);
     await git(['config', 'user.email', 'posthog-watcher-action@users.noreply.github.com']);
     await git(['add', '--', ...repair.files]);
@@ -95,7 +89,12 @@ async function runRepairLoop(issue: IssueSnapshot, triage: TriageResult, inputs:
 
     const failures = [...(validationFailure ? [validationFailure] : []), ...guardrailFailures];
     if (!failures.length) {
-      return { files: stats.files };
+      const reviewGate = await reviewGeneratedDiff(inputs);
+      if (reviewGate.approve) {
+        return { files: stats.files };
+      }
+      failures.push(`independent review gate rejected the diff (${Math.round(reviewGate.confidence * 100)}% confidence): ${reviewGate.reason}`);
+      if (reviewGate.risks.length) failures.push(`review risks: ${reviewGate.risks.join('; ')}`);
     }
 
     failureSummary = failures.join('\n');

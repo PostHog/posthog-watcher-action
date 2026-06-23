@@ -153,7 +153,7 @@ If an open PR or remote branch already exists for that branch, the action reuses
 
 When fix mode is enabled, the action can give `pi` deterministic feedback from validation or guardrail failures and retry. `max-repair-attempts` defaults to `2` and is hard-capped at `3`.
 
-After validation and diff guardrails pass, the action runs a second independent read-only `pi` review of the generated diff. The PR is skipped unless this review gate approves with at least 75% confidence.
+After validation and diff guardrails pass, the action runs a second independent read-only `pi` review of the generated diff. If the review gate rejects the diff and repair attempts remain, the rejection reason is fed back into the next repair attempt. The PR is skipped unless this review gate eventually approves with at least 75% confidence.
 
 ## PR repair/adoption
 

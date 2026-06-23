@@ -94,18 +94,20 @@ ${JSON.stringify(triage, null, 2)}
 
 Requirements:
 - Make only a straightforward, low-risk fix.
-- Add or update tests if the repository has a clear nearby test pattern.
+- The diff must change behavior relevant to the reported bug. Do not make refactor-only, algebraic no-op, formatting-only, or style-only changes.
+- If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values before/with the fix.
+- Inspect nearby tests and implementation before editing. Prefer the smallest source change plus the smallest focused test.
 - Use existing style and commands.
 - Do not change workflow files, generated files, lockfiles, or unrelated code.
 - If the fix is not actually straightforward after inspection, stop without editing and explain why.
-- When done, summarize changed files and validation commands run.
+- When done, summarize changed files, the behavior changed, and validation commands run.
 `;
 }
 
 export function formatRepairFeedbackPrompt(issue: IssueSnapshot, triage: TriageResult, attempt: number, failureSummary: string): string {
   return `Repair attempt ${attempt} for GitHub issue #${issue.number}.
 
-Follow the karpathy-guidelines skill. The previous fix attempt failed validation or guardrails. Make only minimal corrections for the failures below. Do not expand scope or refactor unrelated code.
+Follow the karpathy-guidelines skill. The previous fix attempt failed validation, guardrails, or independent review. Make only minimal corrections for the failures below. Do not expand scope or refactor unrelated code.
 
 Issue title: ${issue.title}
 
@@ -116,8 +118,10 @@ Failure summary:
 ${fence(failureSummary)}
 
 Requirements:
-- Fix only the reported validation/guardrail failures.
-- Preserve the original minimal issue fix.
+- Fix only the reported validation/guardrail/review failures.
+- If the previous diff was a no-op/refactor, replace it with a behavior-changing fix for the issue or remove it.
+- If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values.
+- Preserve the original minimal issue fix intent.
 - If the failure cannot be repaired safely, stop without broad changes and explain why.
 `;
 }

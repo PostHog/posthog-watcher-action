@@ -24666,17 +24666,19 @@ ${JSON.stringify(triage, null, 2)}
 
 Requirements:
 - Make only a straightforward, low-risk fix.
-- Add or update tests if the repository has a clear nearby test pattern.
+- The diff must change behavior relevant to the reported bug. Do not make refactor-only, algebraic no-op, formatting-only, or style-only changes.
+- If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values before/with the fix.
+- Inspect nearby tests and implementation before editing. Prefer the smallest source change plus the smallest focused test.
 - Use existing style and commands.
 - Do not change workflow files, generated files, lockfiles, or unrelated code.
 - If the fix is not actually straightforward after inspection, stop without editing and explain why.
-- When done, summarize changed files and validation commands run.
+- When done, summarize changed files, the behavior changed, and validation commands run.
 `;
 }
 function formatRepairFeedbackPrompt(issue2, triage, attempt, failureSummary) {
   return `Repair attempt ${attempt} for GitHub issue #${issue2.number}.
 
-Follow the karpathy-guidelines skill. The previous fix attempt failed validation or guardrails. Make only minimal corrections for the failures below. Do not expand scope or refactor unrelated code.
+Follow the karpathy-guidelines skill. The previous fix attempt failed validation, guardrails, or independent review. Make only minimal corrections for the failures below. Do not expand scope or refactor unrelated code.
 
 Issue title: ${issue2.title}
 
@@ -24687,8 +24689,10 @@ Failure summary:
 ${fence(failureSummary)}
 
 Requirements:
-- Fix only the reported validation/guardrail failures.
-- Preserve the original minimal issue fix.
+- Fix only the reported validation/guardrail/review failures.
+- If the previous diff was a no-op/refactor, replace it with a behavior-changing fix for the issue or remove it.
+- If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values.
+- Preserve the original minimal issue fix intent.
 - If the failure cannot be repaired safely, stop without broad changes and explain why.
 `;
 }
@@ -24783,11 +24787,6 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
     if (!repair) {
       return void 0;
     }
-    const reviewGate = await reviewGeneratedDiff(inputs);
-    if (!reviewGate.approve) {
-      warning(`Skipping PR because independent review gate rejected the diff: ${reviewGate.reason}`);
-      return void 0;
-    }
     await git(["config", "user.name", "posthog-watcher-action"]);
     await git(["config", "user.email", "posthog-watcher-action@users.noreply.github.com"]);
     await git(["add", "--", ...repair.files]);
@@ -24829,7 +24828,12 @@ async function runRepairLoop(issue2, triage, inputs) {
     });
     const failures = [...validationFailure ? [validationFailure] : [], ...guardrailFailures];
     if (!failures.length) {
-      return { files: stats.files };
+      const reviewGate = await reviewGeneratedDiff(inputs);
+      if (reviewGate.approve) {
+        return { files: stats.files };
+      }
+      failures.push(`independent review gate rejected the diff (${Math.round(reviewGate.confidence * 100)}% confidence): ${reviewGate.reason}`);
+      if (reviewGate.risks.length) failures.push(`review risks: ${reviewGate.risks.join("; ")}`);
     }
     failureSummary = failures.join("\n");
     warning(`Repair attempt ${attempt} failed:
