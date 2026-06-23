@@ -1,7 +1,7 @@
 import type { IssueSnapshot } from './issue-context.js';
 import type { TriageResult } from './triage-schema.js';
 
-export function buildTriageComment(marker: string, issue: IssueSnapshot, triage: TriageResult, labels: string[], prUrl?: string): string {
+export function buildTriageComment(marker: string, issue: IssueSnapshot, triage: TriageResult, labels: string[], prUrl?: string, fixBlockedReason?: string): string {
   const findings = triage.investigation.findings.length
     ? triage.investigation.findings.map((finding) => `- ${finding}`).join('\n')
     : '- No concrete findings yet.';
@@ -31,7 +31,7 @@ Relevant files: ${relevantFiles}
 - Straightforward: **${triage.fix.straightforward ? 'yes' : 'no'}**
 - Risk: **${triage.fix.risk}**
 - Reason: ${triage.fix.reason || '_Not provided._'}
-${triage.fix.suggestedApproach ? `- Suggested approach: ${triage.fix.suggestedApproach}\n` : ''}${prUrl ? `\nDraft PR: ${prUrl}\n` : ''}
+${triage.fix.suggestedApproach ? `- Suggested approach: ${triage.fix.suggestedApproach}\n` : ''}${prUrl ? `\nDraft PR: ${prUrl}\n` : ''}${fixBlockedReason ? `\nFix PR skipped: ${fixBlockedReason}\n` : ''}
 ### Close proposal
 
 ${formatCloseProposal(triage)}

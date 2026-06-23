@@ -23958,7 +23958,7 @@ function commandToResolution(command) {
 }
 
 // src/comment.ts
-function buildTriageComment(marker, issue2, triage, labels, prUrl) {
+function buildTriageComment(marker, issue2, triage, labels, prUrl, fixBlockedReason) {
   const findings = triage.investigation.findings.length ? triage.investigation.findings.map((finding) => `- ${finding}`).join("\n") : "- No concrete findings yet.";
   const relevantFiles = triage.investigation.relevantFiles.length ? triage.investigation.relevantFiles.map((file) => `\`${file}\``).join(", ") : "_None identified._";
   return `${marker}
@@ -23985,6 +23985,8 @@ Relevant files: ${relevantFiles}
 ${triage.fix.suggestedApproach ? `- Suggested approach: ${triage.fix.suggestedApproach}
 ` : ""}${prUrl ? `
 Draft PR: ${prUrl}
+` : ""}${fixBlockedReason ? `
+Fix PR skipped: ${fixBlockedReason}
 ` : ""}
 ### Close proposal
 
@@ -24225,6 +24227,20 @@ async function writeSummary(result) {
 function summarizeConclusion(response) {
   const verdict = response.match(/Verdict:\s*([^\n]+)/i)?.[1]?.trim();
   return verdict || "commit review completed";
+}
+
+// src/fix-blocker.ts
+function findPreExistingFixBlocker(relatedItems, triage) {
+  const closingPullRequest = relatedItems.find(
+    (item) => item.type === "pull_request" && item.state === "open" && item.reason === "closing-pr"
+  );
+  if (closingPullRequest) {
+    return `An open related PR already appears to address this issue: #${closingPullRequest.number} ${closingPullRequest.url}`;
+  }
+  if (triage.closeProposal.propose && (triage.closeProposal.category === "duplicate" || triage.closeProposal.category === "already-fixed") && triage.closeProposal.canonicalUrl) {
+    return `Triage proposed this issue as ${triage.closeProposal.category} of ${triage.closeProposal.canonicalUrl}; skipping a duplicate fix PR.`;
+  }
+  return void 0;
 }
 
 // src/github.ts
@@ -25144,7 +25160,9 @@ async function processIssue(octokit, issueNumber, inputs, command) {
     for (const label of staleLabels) await removeLabel(octokit, issue2.number, label);
     await addLabels(octokit, issue2.number, allLabels);
   }
-  const prUrl = security.sensitive ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs);
+  const fixBlocker = findPreExistingFixBlocker(relatedItems, triage);
+  if (fixBlocker) info(`Skipping fix PR: ${fixBlocker}`);
+  const prUrl = security.sensitive || fixBlocker ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs);
   let closed = false;
   if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, security.sensitive)) {
     if (inputs.dryRun) {
@@ -25155,7 +25173,7 @@ async function processIssue(octokit, issueNumber, inputs, command) {
       closed = true;
     }
   }
-  const commentBody = buildTriageComment(inputs.commentMarker, issue2, triage, allLabels, prUrl);
+  const commentBody = buildTriageComment(inputs.commentMarker, issue2, triage, allLabels, prUrl, fixBlocker);
   let commentUrl = "";
   if (inputs.dryRun) {
     info(`[dry-run] Would upsert issue comment:
@@ -25174,7 +25192,7 @@ ${commentBody}`);
     url: issue2.url,
     prUrl,
     closed,
-    data: { triage, relatedItems, security, command: command.command }
+    data: { triage, relatedItems, security, fixBlocker, command: command.command }
   });
   return {
     conclusion: triage.conclusion,

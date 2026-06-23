@@ -45,6 +45,17 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   assert.match(source, /requireText: false/);
 });
 
+test('pre-existing related fixes block duplicate fix PRs', () => {
+  const source = read('src/fix-blocker.ts');
+  const index = read('src/index.ts');
+  const readme = read('README.md');
+  assert.match(source, /closing-pr/);
+  assert.match(source, /duplicate/);
+  assert.match(source, /already-fixed/);
+  assert.match(index, /findPreExistingFixBlocker/);
+  assert.match(readme, /related open PR contains closing syntax/);
+});
+
 test('new MVP features are documented', () => {
   const readme = read('README.md');
   assert.match(readme, /Repair loop/);

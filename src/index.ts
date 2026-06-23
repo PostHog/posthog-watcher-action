@@ -3,6 +3,7 @@ import * as github from '@actions/github';
 import { resolveCommand, type CommandResolution } from './commands.js';
 import { buildTriageComment } from './comment.js';
 import { reviewCommit } from './commit-review.js';
+import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
 import { addLabels, closeIssue, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit } from './github.js';
 import { getInputs, type ActionInputs } from './inputs.js';
@@ -118,7 +119,9 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     await addLabels(octokit, issue.number, allLabels);
   }
 
-  const prUrl = security.sensitive ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs);
+  const fixBlocker = findPreExistingFixBlocker(relatedItems, triage);
+  if (fixBlocker) core.info(`Skipping fix PR: ${fixBlocker}`);
+  const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs);
   let closed = false;
   if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, security.sensitive)) {
     if (inputs.dryRun) {
@@ -130,7 +133,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     }
   }
 
-  const commentBody = buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl);
+  const commentBody = buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker);
   let commentUrl = '';
   if (inputs.dryRun) {
     core.info(`[dry-run] Would upsert issue comment:\n${commentBody}`);
@@ -149,7 +152,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     url: issue.url,
     prUrl,
     closed,
-    data: { triage, relatedItems, security, command: command.command },
+    data: { triage, relatedItems, security, fixBlocker, command: command.command },
   });
 
   return {
