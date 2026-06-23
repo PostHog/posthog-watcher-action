@@ -24106,15 +24106,20 @@ function collectPiErrors(stdout) {
       const event = JSON.parse(line);
       if (event.errorMessage) errors.push(event.errorMessage);
       if (event.finalError) errors.push(event.finalError);
-      if (event.message) {
-        const messageText = extractMessageText(event.message);
-        if (/error|failed|invalid|not found|unauthorized/i.test(messageText)) errors.push(messageText);
+      if (event.message) collectMessageErrors(event.message, errors);
+      if (event.messages) {
+        for (const message of event.messages) collectMessageErrors(message, errors);
       }
       if (event.isError && event.result) errors.push(typeof event.result === "string" ? event.result : JSON.stringify(event.result));
     } catch {
     }
   }
-  return errors;
+  return [...new Set(errors)];
+}
+function collectMessageErrors(message, errors) {
+  if (message.errorMessage) errors.push(message.errorMessage);
+  const messageText = extractMessageText(message);
+  if (/error|failed|invalid|not found|unauthorized/i.test(messageText)) errors.push(messageText);
 }
 
 // src/commit-review.ts
