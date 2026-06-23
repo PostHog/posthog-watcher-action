@@ -5,7 +5,17 @@ export interface CommandResult {
   stderr: string;
 }
 
+export interface CommandStatusResult extends CommandResult {
+  code: number | null;
+}
+
 export async function runCommand(command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<CommandResult> {
+  const result = await runCommandStatus(command, args, options);
+  if (result.code === 0) return { stdout: result.stdout, stderr: result.stderr };
+  throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.code}\n${result.stderr || result.stdout}`);
+}
+
+export async function runCommandStatus(command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<CommandStatusResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
@@ -27,11 +37,7 @@ export async function runCommand(command: string, args: string[], options: { cwd
 
     child.on('error', reject);
     child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(`${command} ${args.join(' ')} failed with exit code ${code}\n${stderr || stdout}`));
-      }
+      resolve({ code, stdout, stderr });
     });
   });
 }

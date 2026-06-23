@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import path from 'node:path';
-import { runCommand } from './git.js';
+import { runCommandStatus } from './git.js';
 import type { ActionInputs } from './inputs.js';
 
 export interface PiRunOptions {
@@ -11,6 +11,10 @@ export interface PiRunOptions {
 }
 
 export async function runPi(options: PiRunOptions): Promise<string> {
+  if (options.inputs.model.startsWith('openai-codex/')) {
+    throw new Error('The openai-codex/* provider is not supported by this GitHub Action because it only configures OPENAI_API_KEY. Use an OpenAI API model such as openai/gpt-5.5:high.');
+  }
+
   const skillPath = path.join(path.resolve(__dirname, '..'), 'skills', 'karpathy-guidelines', 'SKILL.md');
   const args = [
     '--yes',
@@ -36,8 +40,12 @@ export async function runPi(options: PiRunOptions): Promise<string> {
   core.info(`Running pi with model ${options.inputs.model} and tools ${options.tools.join(',')}`);
 
   const env = sanitizedEnv(options.inputs.openaiApiKey);
-  const result = await runCommand('npx', args, { cwd: options.cwd ?? process.cwd(), env });
+  const result = await runCommandStatus('npx', args, { cwd: options.cwd ?? process.cwd(), env });
   if (result.stderr.trim()) core.debug(result.stderr.trim());
+
+  if (result.code !== 0) {
+    throw new Error(`pi exited with code ${result.code}.${formatPiDiagnostics(result.stdout, result.stderr)}`);
+  }
 
   const text = collectAssistantText(result.stdout);
   if (!text.trim()) {

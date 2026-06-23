@@ -23973,6 +23973,12 @@ function formatCloseProposal(triage) {
 // src/git.ts
 var import_node_child_process = require("node:child_process");
 async function runCommand(command, args, options = {}) {
+  const result = await runCommandStatus(command, args, options);
+  if (result.code === 0) return { stdout: result.stdout, stderr: result.stderr };
+  throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.code}
+${result.stderr || result.stdout}`);
+}
+async function runCommandStatus(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = (0, import_node_child_process.spawn)(command, args, {
       cwd: options.cwd,
@@ -23991,12 +23997,7 @@ async function runCommand(command, args, options = {}) {
     });
     child.on("error", reject);
     child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(`${command} ${args.join(" ")} failed with exit code ${code}
-${stderr || stdout}`));
-      }
+      resolve({ code, stdout, stderr });
     });
   });
 }
@@ -24011,6 +24012,9 @@ async function git(args, cwd = process.cwd()) {
 // src/pi-runner.ts
 var import_node_path = __toESM(require("node:path"));
 async function runPi(options) {
+  if (options.inputs.model.startsWith("openai-codex/")) {
+    throw new Error("The openai-codex/* provider is not supported by this GitHub Action because it only configures OPENAI_API_KEY. Use an OpenAI API model such as openai/gpt-5.5:high.");
+  }
   const skillPath = import_node_path.default.join(import_node_path.default.resolve(__dirname, ".."), "skills", "karpathy-guidelines", "SKILL.md");
   const args = [
     "--yes",
@@ -24034,8 +24038,11 @@ async function runPi(options) {
   ];
   info(`Running pi with model ${options.inputs.model} and tools ${options.tools.join(",")}`);
   const env = sanitizedEnv(options.inputs.openaiApiKey);
-  const result = await runCommand("npx", args, { cwd: options.cwd ?? process.cwd(), env });
+  const result = await runCommandStatus("npx", args, { cwd: options.cwd ?? process.cwd(), env });
   if (result.stderr.trim()) debug(result.stderr.trim());
+  if (result.code !== 0) {
+    throw new Error(`pi exited with code ${result.code}.${formatPiDiagnostics(result.stdout, result.stderr)}`);
+  }
   const text = collectAssistantText(result.stdout);
   if (!text.trim()) {
     throw new Error(`pi returned no assistant text.${formatPiDiagnostics(result.stdout, result.stderr)}`);
@@ -24548,7 +24555,7 @@ function getInputs() {
   return {
     openaiApiKey: required("openai-api-key"),
     githubToken: required("github-token"),
-    model: getInput("model") || "openai-codex/gpt-5.5:high",
+    model: getInput("model") || "openai/gpt-5.5:high",
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, "issue-number") : void 0,
     mode,
     allowFix: parseBoolean(getInput("allow-fix")),

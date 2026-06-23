@@ -17,7 +17,7 @@ inputs:
   model:
     description: pi model identifier
     required: false
-    default: openai-codex/gpt-5.5:high
+    default: openai/gpt-5.5:high
   issue-number:
     description: Issue number to process. Defaults to the issue from the event payload.
     required: false
