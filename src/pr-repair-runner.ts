@@ -13,7 +13,29 @@ export interface PullRequestRepairResult {
   repaired: boolean;
 }
 
-export async function repairPullRequest(octokit: Octokit, pullNumber: number, inputs: ActionInputs): Promise<PullRequestRepairResult> {
+async function getPullRequestLabels(octokit: Octokit, pullNumber: number): Promise<string[]> {
+  const { owner, repo } = github.context.repo;
+  const issue = await octokit.rest.issues.get({ owner, repo, issue_number: pullNumber });
+  return issue.data.labels.map((label: string | { name?: string | null }) => (typeof label === 'string' ? label : label.name ?? '')).filter(Boolean);
+}
+
+async function getPullRequestFailureContext(octokit: Octokit, pullNumber: number, headSha: string): Promise<string> {
+  const { owner, repo } = github.context.repo;
+  const parts: string[] = [];
+  const checkRuns = await octokit.rest.checks.listForRef({ owner, repo, ref: headSha, per_page: 20 }).catch(() => undefined);
+  for (const check of checkRuns?.data.check_runs ?? []) {
+    if (check.conclusion && check.conclusion !== 'success' && check.conclusion !== 'neutral' && check.conclusion !== 'skipped') {
+      parts.push(`Check ${check.name}: ${check.conclusion} ${check.html_url}`);
+    }
+  }
+  const comments = await octokit.paginate(octokit.rest.pulls.listReviewComments, { owner, repo, pull_number: pullNumber, per_page: 20 }).catch(() => [] as Array<{ path?: string; body?: string }>);
+  for (const comment of comments.slice(-10)) {
+    if (comment.body) parts.push(`Review comment on ${comment.path ?? 'unknown'}: ${comment.body.slice(0, 500)}`);
+  }
+  return parts.join('\n');
+}
+
+export async function repairPullRequest(octokit: Octokit, pullNumber: number, inputs: ActionInputs, command?: string): Promise<PullRequestRepairResult> {
   const { owner, repo } = github.context.repo;
   const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
   const pr = pull.data;
@@ -23,18 +45,36 @@ export async function repairPullRequest(octokit: Octokit, pullNumber: number, in
     return { conclusion: 'skipped fork PR repair', prUrl: pr.html_url, repaired: false };
   }
 
+  if (!command) {
+    return { conclusion: 'skipped PR repair because no trusted command was provided', prUrl: pr.html_url, repaired: false };
+  }
+
   if (!inputs.allowFix) {
     core.info('Skipping PR repair because allow-fix is false.');
     return { conclusion: 'skipped because allow-fix is false', prUrl: pr.html_url, repaired: false };
   }
 
+  const labels = await getPullRequestLabels(octokit, pullNumber);
   const branch = pr.head.ref;
+  if (!branch.startsWith('posthog-watcher/') && !labels.some((label) => label === 'posthog-watcher:autofix' || label === 'posthog-watcher:adopted')) {
+    return { conclusion: 'skipped PR repair because branch is not a watcher branch and PR is not opted in', prUrl: pr.html_url, repaired: false };
+  }
+
+  const failureContext = await getPullRequestFailureContext(octokit, pullNumber, pr.head.sha);
+  if ((command === 'fix-ci' || command === 'address-review') && !failureContext.trim()) {
+    return { conclusion: `skipped ${command} because no failing check or review context was found`, prUrl: pr.html_url, repaired: false };
+  }
   await git(['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
   await git(['checkout', '-B', branch, `origin/${branch}`]);
 
   const prompt = `Repair pull request #${pullNumber}: ${pr.title}
 
 This is PR repair/adoption. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
+
+Failure/review context:
+\`\`\`
+${failureContext || '(none provided; keep changes minimal and issue-specific)'}
+\`\`\`
 
 PR body:
 \`\`\`
@@ -46,6 +86,9 @@ ${pr.body ?? '(empty)'}
   if (inputs.validationCommand) await runShell(inputs.validationCommand, process.cwd());
 
   const stats = parseNumstat(await git(['diff', '--numstat']));
+  if (!stats.files.length) {
+    return { conclusion: 'skipped PR repair because no files changed', prUrl: pr.html_url, repaired: false };
+  }
   const failures = checkDiffGuardrails(stats, { maxChangedFiles: inputs.maxChangedFiles, maxDiffLines: inputs.maxDiffLines });
   if (failures.length) {
     core.warning(`Skipping PR branch push because guardrails failed:\n- ${failures.join('\n- ')}`);

@@ -9,13 +9,13 @@ export interface CommandStatusResult extends CommandResult {
   code: number | null;
 }
 
-export async function runCommand(command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<CommandResult> {
+export async function runCommand(command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {}): Promise<CommandResult> {
   const result = await runCommandStatus(command, args, options);
   if (result.code === 0) return { stdout: result.stdout, stderr: result.stderr };
   throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.code}\n${result.stderr || result.stdout}`);
 }
 
-export async function runCommandStatus(command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<CommandStatusResult> {
+export async function runCommandStatus(command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {}): Promise<CommandStatusResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
@@ -35,8 +35,16 @@ export async function runCommandStatus(command: string, args: string[], options:
       stderr += chunk;
     });
 
+    const timeout = options.timeoutMs
+      ? setTimeout(() => {
+          stderr += `\nCommand timed out after ${options.timeoutMs}ms`;
+          child.kill('SIGTERM');
+        }, options.timeoutMs)
+      : undefined;
+
     child.on('error', reject);
     child.on('close', (code) => {
+      if (timeout) clearTimeout(timeout);
       resolve({ code, stdout, stderr });
     });
   });

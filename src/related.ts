@@ -9,6 +9,8 @@ export interface RelatedItem {
   title: string;
   url: string;
   labels: string[];
+  bodyExcerpt: string;
+  createdAt: string;
   reason: 'explicit-reference' | 'title-search' | 'closing-pr';
 }
 
@@ -73,6 +75,8 @@ async function fetchIssueLike(octokit: Octokit, number: number, reason: RelatedI
     title: item.title,
     url: item.html_url,
     labels: item.labels.map((label: string | { name?: string | null }) => (typeof label === 'string' ? label : label.name ?? '')).filter(Boolean),
+    bodyExcerpt: excerpt(item.body ?? ''),
+    createdAt: item.created_at,
     reason,
   };
 }
@@ -94,6 +98,8 @@ async function searchClosingPullRequests(octokit: Octokit, issue: IssueSnapshot,
       title: item.title,
       url: item.html_url,
       labels: item.labels.map((label: { name?: string | null }) => label.name ?? '').filter(Boolean),
+      bodyExcerpt: excerpt(item.body ?? ''),
+      createdAt: item.created_at,
       reason: 'closing-pr' as const,
     }));
 }
@@ -121,8 +127,14 @@ async function searchByTitle(octokit: Octokit, issue: IssueSnapshot, limit: numb
     title: item.title,
     url: item.html_url,
     labels: item.labels.map((label: { name?: string | null }) => label.name ?? '').filter(Boolean),
+    bodyExcerpt: excerpt(item.body ?? ''),
+    createdAt: item.created_at,
     reason: 'title-search' as const,
   }));
+}
+
+function excerpt(value: string): string {
+  return value.length > 1000 ? `${value.slice(0, 1000)}…` : value;
 }
 
 function escapeRegExp(value: string): string {

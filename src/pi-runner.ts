@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import path from 'node:path';
 import { runCommandStatus } from './git.js';
 import type { ActionInputs } from './inputs.js';
+import { consumePiCall } from './pi-budget.js';
 
 export interface PiRunOptions {
   prompt: string;
@@ -16,6 +17,7 @@ export async function runPi(options: PiRunOptions): Promise<string> {
     throw new Error('The openai-codex/* provider is not supported by this GitHub Action because it only configures OPENAI_API_KEY. Use an OpenAI API model such as openai/gpt-5.5:high.');
   }
 
+  const callNumber = consumePiCall(options.inputs, options.requireText === false ? 'repair/review run' : 'triage run');
   const skillPath = path.join(path.resolve(__dirname, '..'), 'skills', 'karpathy-guidelines', 'SKILL.md');
   const args = [
     '--yes',
@@ -38,10 +40,10 @@ export async function runPi(options: PiRunOptions): Promise<string> {
     options.prompt,
   ];
 
-  core.info(`Running pi with model ${options.inputs.model} and tools ${options.tools.join(',')}`);
+  core.info(`Running pi call ${callNumber}/${options.inputs.maxPiCalls} with model ${options.inputs.model} and tools ${options.tools.join(',')}`);
 
   const env = sanitizedEnv(options.inputs.openaiApiKey);
-  const result = await runCommandStatus('npx', args, { cwd: options.cwd ?? process.cwd(), env });
+  const result = await runCommandStatus('npx', args, { cwd: options.cwd ?? process.cwd(), env, timeoutMs: options.inputs.piTimeoutMs });
   if (result.stderr.trim()) core.debug(result.stderr.trim());
 
   if (result.code !== 0) {

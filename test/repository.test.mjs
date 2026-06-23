@@ -61,9 +61,13 @@ test('pre-existing related fixes block duplicate fix PRs', () => {
 
 test('security policy uses word-boundary matching for short terms', () => {
   const source = read('src/security.ts');
+  const index = read('src/index.ts');
+  const readme = read('README.md');
   assert.match(source, /SECURITY_PATTERNS/);
   assert.match(source, /\\\\b/);
   assert.doesNotMatch(source, /haystack\.includes/);
+  assert.match(index, /allowSecurityAi/);
+  assert.match(readme, /not sent to pi\/OpenAI/);
 });
 
 test('new MVP features are documented', () => {
@@ -72,6 +76,22 @@ test('new MVP features are documented', () => {
   assert.match(readme, /Related context and close\/apply/);
   assert.match(readme, /Commit reviews/);
   assert.match(readme, /allow-close: true/);
+});
+
+test('advanced hardening features are wired', () => {
+  const inputs = read('src/inputs.ts');
+  const piRunner = read('src/pi-runner.ts');
+  const state = read('src/state.ts');
+  const prRepair = read('src/pr-repair-runner.ts');
+  const commands = read('src/command-replies.ts');
+  assert.match(inputs, /maxPiCalls/);
+  assert.match(inputs, /piTimeoutMs/);
+  assert.match(piRunner, /consumePiCall/);
+  assert.match(state, /index\.json/);
+  assert.match(state, /isConflictLike/);
+  assert.match(prRepair, /posthog-watcher:autofix/);
+  assert.match(prRepair, /getPullRequestFailureContext/);
+  assert.match(commands, /PostHog Watcher \$\{command\}/);
 });
 
 test('pi JSON output parser falls back to final assistant messages', () => {

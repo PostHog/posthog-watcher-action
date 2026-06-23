@@ -1,8 +1,13 @@
+import type { DuplicateAssessment } from './duplicate-detector.js';
 import type { IssueSnapshot } from './issue-context.js';
 import type { RelatedItem } from './related.js';
 import type { TriageResult } from './triage-schema.js';
 
-export function findPreExistingFixBlocker(issue: IssueSnapshot, relatedItems: RelatedItem[], triage: TriageResult): string | undefined {
+export function findPreExistingFixBlocker(issue: IssueSnapshot, relatedItems: RelatedItem[], triage: TriageResult, duplicate: DuplicateAssessment): string | undefined {
+  if (duplicate.duplicate && duplicate.canonical) {
+    return `${duplicate.reason}: #${duplicate.canonical.number} ${duplicate.canonical.url}`;
+  }
+
   const relatedPullRequest = relatedItems.find(
     (item) => item.type === 'pull_request' && item.state === 'open' && (item.reason === 'closing-pr' || item.reason === 'title-search'),
   );

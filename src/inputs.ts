@@ -10,6 +10,7 @@ export interface ActionInputs {
   mode: Mode;
   allowFix: boolean;
   allowClose: boolean;
+  allowSecurityAi: boolean;
   dryRun: boolean;
   labelAllowlist: string[];
   managedLabelPrefix: string;
@@ -22,7 +23,10 @@ export interface ActionInputs {
   validationCommand: string;
   commitSha?: string;
   maxSweepItems: number;
+  maxSweepFixItems: number;
   sweepQuery: string;
+  maxPiCalls: number;
+  piTimeoutMs: number;
   stateEnabled: boolean;
   stateRepo: string;
   stateBranch: string;
@@ -42,6 +46,7 @@ export function getInputs(): ActionInputs {
     mode,
     allowFix: parseBoolean(core.getInput('allow-fix')),
     allowClose: parseBoolean(core.getInput('allow-close')),
+    allowSecurityAi: parseBoolean(core.getInput('allow-security-ai')),
     dryRun: parseBoolean(core.getInput('dry-run')),
     labelAllowlist: parseCsv(core.getInput('labels')),
     managedLabelPrefix: core.getInput('managed-label-prefix') || 'posthog-watcher:',
@@ -54,7 +59,10 @@ export function getInputs(): ActionInputs {
     validationCommand: core.getInput('validation-command'),
     commitSha: core.getInput('commit-sha') || undefined,
     maxSweepItems: parsePositiveInt(core.getInput('max-sweep-items') || '10', 'max-sweep-items'),
+    maxSweepFixItems: parseNonNegativeInt(core.getInput('max-sweep-fix-items') || '0', 'max-sweep-fix-items'),
     sweepQuery: core.getInput('sweep-query') || 'is:issue is:open archived:false',
+    maxPiCalls: parsePositiveInt(core.getInput('max-pi-calls') || '4', 'max-pi-calls'),
+    piTimeoutMs: parsePositiveInt(core.getInput('pi-timeout-ms') || '600000', 'pi-timeout-ms'),
     stateEnabled: parseBoolean(core.getInput('state-enabled')),
     stateRepo: core.getInput('state-repo'),
     stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',
@@ -77,6 +85,14 @@ function parsePositiveInt(value: string, name: string): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function parseNonNegativeInt(value: string, name: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
   }
   return parsed;
 }

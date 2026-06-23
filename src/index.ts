@@ -1,8 +1,10 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
+import { replyToCommand } from './command-replies.js';
 import { resolveCommand, type CommandResolution } from './commands.js';
-import { buildTriageComment } from './comment.js';
+import { buildSecurityComment, buildTriageComment } from './comment.js';
 import { reviewCommit } from './commit-review.js';
+import { assessDuplicate } from './duplicate-detector.js';
 import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
 import { addLabels, closeIssue, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit } from './github.js';
@@ -10,14 +12,16 @@ import { getInputs, type ActionInputs } from './inputs.js';
 import { formatIssuePrompt } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
 import { filterAllowedLabels } from './labels.js';
+import { getPiCallCount, resetPiCallCount } from './pi-budget.js';
 import { runPi } from './pi-runner.js';
 import { repairPullRequest } from './pr-repair-runner.js';
 import { getRelatedContext } from './related.js';
 import { assessIssueSecurity } from './security.js';
 import { writeStateRecord } from './state.js';
-import { parseTriageResult } from './triage-schema.js';
+import { parseTriageResult, type TriageResult } from './triage-schema.js';
 
 async function main(): Promise<void> {
+  resetPiCallCount();
   const command = resolveCommand();
   if (!command.shouldRun) {
     core.info(`Skipping run: ${command.reason ?? 'no command matched'}.`);
@@ -42,13 +46,20 @@ async function main(): Promise<void> {
   }
 
   const issueNumber = resolveIssueNumber(inputs.issueNumber);
+  if (command.command === 'status' || command.command === 'explain' || command.command === 'ask') {
+    const result = await replyToCommand(octokit, issueNumber, inputs, command.command);
+    core.setOutput('conclusion', result.conclusion);
+    core.setOutput('comment-url', result.commentUrl);
+    return;
+  }
+
   if (isPullRequestPayload() || github.context.eventName === 'pull_request') {
     if (inputs.mode !== 'fix') {
       core.info('PR review/triage is read-only in this MVP; use @posthog-watcher fix for same-repo PR repair.');
       core.setOutput('conclusion', 'skipped PR mutation; use fix command');
       return;
     }
-    const result = await repairPullRequest(octokit, issueNumber, inputs);
+    const result = await repairPullRequest(octokit, issueNumber, inputs, command.command);
     core.setOutput('conclusion', result.conclusion);
     core.setOutput('pr-url', result.prUrl);
     return;
@@ -72,11 +83,22 @@ async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
   core.info(`Sweep found ${issueNumbers.length} open issue(s).`);
 
   const results: ProcessIssueResult[] = [];
-  for (const issueNumber of issueNumbers) {
-    results.push(await processIssue(octokit, issueNumber, inputs, { shouldRun: true }));
+  let skipped = 0;
+  for (const [index, issueNumber] of issueNumbers.entries()) {
+    const itemInputs = { ...inputs, allowFix: inputs.allowFix && index < inputs.maxSweepFixItems, allowClose: false };
+    try {
+      results.push(await processIssue(octokit, issueNumber, itemInputs, { shouldRun: true }));
+    } catch (error) {
+      if (error instanceof Error && /Pi call budget exhausted/.test(error.message)) {
+        skipped += 1;
+        core.warning(`Stopping sweep because pi budget is exhausted: ${error.message}`);
+        break;
+      }
+      throw error;
+    }
   }
 
-  core.setOutput('conclusion', `swept ${results.length} issue(s)`);
+  core.setOutput('conclusion', `swept ${results.length} issue(s), skipped ${skipped}`);
   core.setOutput('triage-json', JSON.stringify(results));
 }
 
@@ -89,11 +111,47 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     repositoryLabels.some((existing) => existing.toLowerCase() === label.toLowerCase()),
   );
 
-  const relatedItems = await getRelatedContext(octokit, issue, inputs.maxRelatedItems);
   const security = assessIssueSecurity(issue);
   if (security.sensitive) {
-    core.warning(`Security-sensitive issue detected. Disabling fix and close actions. Reasons: ${security.reasons.join(', ')}`);
+    core.warning(`Security-sensitive issue detected. Reasons: ${security.reasons.join(', ')}`);
   }
+
+  if (security.sensitive && !inputs.allowSecurityAi) {
+    const managedLabels = desiredManagedLabels(inputs.managedLabelPrefix, minimalSecurityTriage(), security).filter((label) =>
+      repositoryLabels.some((existing) => existing.toLowerCase() === label.toLowerCase()),
+    );
+    const staleLabels = inputs.syncManagedLabels ? staleManagedLabels(issue.labels, managedLabels, inputs.managedLabelPrefix) : [];
+    if (inputs.dryRun) {
+      core.info(`[dry-run] Would route security-sensitive issue #${issue.number} to human review without pi.`);
+    } else {
+      for (const label of staleLabels) await removeLabel(octokit, issue.number, label);
+      await addLabels(octokit, issue.number, managedLabels);
+    }
+    const commentBody = buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons);
+    const commentUrl = inputs.dryRun ? '' : await upsertIssueComment(octokit, issue.number, inputs.commentMarker, commentBody);
+    await writeStateRecord(octokit, inputs, {
+      kind: 'issue',
+      owner: issue.owner,
+      repo: issue.repo,
+      numberOrSha: String(issue.number),
+      title: issue.title,
+      conclusion: 'security-sensitive; human review required',
+      labels: managedLabels,
+      url: issue.url,
+      closed: false,
+      data: { security, redacted: true, piCalls: getPiCallCount() },
+    });
+    return {
+      conclusion: 'security-sensitive; human review required',
+      labels: managedLabels,
+      commentUrl,
+      triageJson: JSON.stringify({ security, redacted: true }),
+      closed: false,
+    };
+  }
+
+  const relatedItems = await getRelatedContext(octokit, issue, inputs.maxRelatedItems);
+  const duplicate = assessDuplicate(issue, relatedItems);
 
   const piOutput = await runPi({
     inputs,
@@ -119,11 +177,11 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     await addLabels(octokit, issue.number, allLabels);
   }
 
-  const fixBlocker = findPreExistingFixBlocker(issue, relatedItems, triage);
+  const fixBlocker = findPreExistingFixBlocker(issue, relatedItems, triage, duplicate);
   if (fixBlocker) core.info(`Skipping fix PR: ${fixBlocker}`);
   const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs);
   let closed = false;
-  if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, security.sensitive)) {
+  if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, duplicate.duplicate, duplicate.score, security.sensitive)) {
     if (inputs.dryRun) {
       core.info(`[dry-run] Would close issue #${issue.number}.`);
       closed = true;
@@ -152,7 +210,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     url: issue.url,
     prUrl,
     closed,
-    data: { triage, relatedItems, security, fixBlocker, command: command.command },
+    data: { triage, relatedItems, duplicate, security, fixBlocker, command: command.command, piCalls: getPiCallCount(), runId: github.context.runId, runUrl: runUrl() },
   });
 
   return {
@@ -165,8 +223,36 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   };
 }
 
-function shouldCloseIssue(inputs: ActionInputs, command: CommandResolution, proposed: boolean, confidence: number, securitySensitive: boolean): boolean {
-  return Boolean(command.applyClose && inputs.allowClose && proposed && confidence >= 0.95 && !securitySensitive);
+function shouldCloseIssue(
+  inputs: ActionInputs,
+  command: CommandResolution,
+  proposed: boolean,
+  confidence: number,
+  duplicate: boolean,
+  duplicateScore: number,
+  securitySensitive: boolean,
+): boolean {
+  return Boolean(command.applyClose && inputs.allowClose && !securitySensitive && ((proposed && confidence >= 0.95) || (duplicate && duplicateScore >= 0.55)));
+}
+
+function minimalSecurityTriage(): TriageResult {
+  return {
+    conclusion: 'security-sensitive; human review required',
+    summary: 'Security-sensitive report routed to human review without AI processing.',
+    issueType: 'unknown',
+    confidence: 1,
+    labels: [],
+    needsMoreInfo: false,
+    maintainerComment: 'Security-sensitive report routed to human review.',
+    investigation: { relevantFiles: [], findings: [] },
+    fix: { straightforward: false, reason: 'security-sensitive', suggestedApproach: '', risk: 'high' },
+    closeProposal: { propose: false, category: 'none', confidence: 0, reason: '', canonicalUrl: '' },
+  };
+}
+
+function runUrl(): string {
+  const { owner, repo } = github.context.repo;
+  return `https://github.com/${owner}/${repo}/actions/runs/${github.context.runId}`;
 }
 
 function isPullRequestPayload(): boolean {

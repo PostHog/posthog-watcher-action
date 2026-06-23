@@ -34,6 +34,10 @@ inputs:
     description: Whether trusted maintainer close/apply-close commands may close high-confidence issues
     required: false
     default: 'false'
+  allow-security-ai:
+    description: Whether suspected security-sensitive reports may be sent to pi/OpenAI. Defaults to false.
+    required: false
+    default: 'false'
   dry-run:
     description: Log intended GitHub mutations without applying them
     required: false
@@ -82,10 +86,22 @@ inputs:
     description: Maximum open issues to process in sweep mode
     required: false
     default: '10'
+  max-sweep-fix-items:
+    description: Maximum sweep items that may attempt fixes. Defaults to 0.
+    required: false
+    default: '0'
   sweep-query:
     description: GitHub search query suffix for sweep mode
     required: false
     default: 'is:issue is:open archived:false'
+  max-pi-calls:
+    description: Maximum pi calls allowed for this action run
+    required: false
+    default: '4'
+  pi-timeout-ms:
+    description: Timeout in milliseconds for each pi subprocess
+    required: false
+    default: '600000'
   state-enabled:
     description: Whether to write durable markdown state records and dashboard to state-branch
     required: false
