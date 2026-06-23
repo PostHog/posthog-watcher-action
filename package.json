@@ -6,7 +6,9 @@
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "build": "tsc --noEmit && node scripts/build.mjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@actions/core": "^3.0.1",
