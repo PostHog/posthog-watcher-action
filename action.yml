@@ -48,9 +48,9 @@ inputs:
     required: false
     default: 'false'
   labels:
-    description: Comma-separated allowlist of labels the agent may add
+    description: Comma-separated allowlist of labels the agent may add, or * to use all repository labels except managed labels
     required: false
-    default: bug,documentation,enhancement,question,needs-info,good-first-issue
+    default: '*'
   managed-label-prefix:
     description: Prefix for labels exclusively managed by this action
     required: false

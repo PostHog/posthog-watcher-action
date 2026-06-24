@@ -3,6 +3,11 @@ import type { IssueSnapshot } from './issue-context.js';
 
 export type Octokit = ReturnType<typeof github.getOctokit>;
 
+export interface RepositoryLabel {
+  name: string;
+  description?: string | null;
+}
+
 export function resolveIssueNumber(inputIssueNumber?: number): number {
   if (inputIssueNumber) return inputIssueNumber;
   const payload = github.context.payload as { issue?: { number?: number }; pull_request?: { number?: number } };
@@ -64,10 +69,13 @@ export async function getIssueComment(octokit: Octokit, owner: string, repo: str
   return response.data;
 }
 
-export async function listRepositoryLabels(octokit: Octokit): Promise<string[]> {
+export async function listRepositoryLabels(octokit: Octokit): Promise<RepositoryLabel[]> {
   const { owner, repo } = github.context.repo;
   const labels = await octokit.paginate(octokit.rest.issues.listLabelsForRepo, { owner, repo, per_page: 100 });
-  return labels.map((label: { name: string }) => label.name);
+  return labels.map((label: { name: string; description?: string | null }) => ({
+    name: label.name,
+    description: label.description ?? undefined,
+  }));
 }
 
 export async function addLabels(octokit: Octokit, issueNumber: number, labels: string[]): Promise<void> {

@@ -186,6 +186,22 @@ test('queue drain preserves FIFO and retry state', () => {
   assert.match(commandReplies, /questionOverride/);
 });
 
+test('repository labels can be used dynamically with descriptions', () => {
+  const action = read('action.yml');
+  const githubSource = read('src/github.ts');
+  const index = read('src/index.ts');
+  const issueContext = read('src/issue-context.ts');
+  const readme = read('README.md');
+  assert.match(action, /default: '\*'/);
+  assert.match(githubSource, /description: label\.description/);
+  assert.match(index, /allowedRepositoryLabels/);
+  assert.match(index, /allowlist\.includes\('\*'\)/);
+  assert.match(index, /!label\.name\.startsWith\(managedLabelPrefix\)/);
+  assert.match(issueContext, /formatAllowedLabels/);
+  assert.match(issueContext, /label\.description/);
+  assert.match(readme, /Label descriptions are included/);
+});
+
 test('fix PRs use host pull request template when present', () => {
   const fixRunner = read('src/fix-runner.ts');
   const readme = read('README.md');

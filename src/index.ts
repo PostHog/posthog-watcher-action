@@ -7,7 +7,7 @@ import { reviewCommit } from './commit-review.js';
 import { assessDuplicate } from './duplicate-detector.js';
 import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
-import { addLabels, closeIssue, getIssueComment, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit } from './github.js';
+import { addLabels, closeIssue, getIssueComment, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
 import { getInputs, type ActionInputs } from './inputs.js';
 import { formatIssuePrompt } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
@@ -204,9 +204,9 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   }
 
   const repositoryLabels = await listRepositoryLabels(octokit);
-  const allowedExistingLabels = inputs.labelAllowlist.filter((label) =>
-    repositoryLabels.some((existing) => existing.toLowerCase() === label.toLowerCase()),
-  );
+  const repositoryLabelNames = repositoryLabels.map((label) => label.name);
+  const allowedExistingLabels = allowedRepositoryLabels(inputs.labelAllowlist, repositoryLabels, inputs.managedLabelPrefix);
+  const allowedExistingLabelNames = allowedExistingLabels.map((label) => label.name);
 
   const security = assessIssueSecurity(issue);
   if (security.sensitive) {
@@ -215,7 +215,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
 
   if (security.sensitive && !inputs.allowSecurityAi) {
     const managedLabels = desiredManagedLabels(inputs.managedLabelPrefix, minimalSecurityTriage(), security).filter((label) =>
-      repositoryLabels.some((existing) => existing.toLowerCase() === label.toLowerCase()),
+      repositoryLabelNames.some((existing) => existing.toLowerCase() === label.toLowerCase()),
     );
     const staleLabels = inputs.syncManagedLabels ? staleManagedLabels(issue.labels, managedLabels, inputs.managedLabelPrefix) : [];
     if (inputs.dryRun) {
@@ -259,9 +259,9 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   const triage = parseTriageResult(piOutput);
   triage.fix.straightforward = inputs.allowFix && !security.sensitive && triage.confidence >= 0.75 && !triage.needsMoreInfo && triage.fix.risk === 'low';
 
-  const labels = filterAllowedLabels(triage.labels, allowedExistingLabels, repositoryLabels);
+  const labels = filterAllowedLabels(triage.labels, allowedExistingLabelNames, repositoryLabelNames);
   const managedLabels = desiredManagedLabels(inputs.managedLabelPrefix, triage, security).filter((label) =>
-    repositoryLabels.some((existing) => existing.toLowerCase() === label.toLowerCase()),
+    repositoryLabelNames.some((existing) => existing.toLowerCase() === label.toLowerCase()),
   );
   const staleLabels = inputs.syncManagedLabels ? staleManagedLabels(issue.labels, managedLabels, inputs.managedLabelPrefix) : [];
   const allLabels = [...new Set([...labels, ...managedLabels])];
@@ -352,6 +352,15 @@ function minimalSecurityTriage(): TriageResult {
     fix: { straightforward: false, reason: 'security-sensitive', suggestedApproach: '', risk: 'high' },
     closeProposal: { propose: false, category: 'none', confidence: 0, reason: '', canonicalUrl: '' },
   };
+}
+
+function allowedRepositoryLabels(allowlist: string[], repositoryLabels: RepositoryLabel[], managedLabelPrefix: string): RepositoryLabel[] {
+  if (allowlist.includes('*')) {
+    return repositoryLabels.filter((label) => !label.name.startsWith(managedLabelPrefix));
+  }
+
+  const allowed = new Set(allowlist.map((label) => label.trim().toLowerCase()));
+  return repositoryLabels.filter((label) => allowed.has(label.name.toLowerCase()));
 }
 
 function runUrl(): string {

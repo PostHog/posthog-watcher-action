@@ -11,7 +11,7 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Fetches issue title, body, labels, and recent comments.
 - Runs `pi` with an OpenAI model and read-only tools to inspect the checkout.
 - Gives `pi` access to the vendored `karpathy-guidelines` Agent Skill, based on [`multica-ai/andrej-karpathy-skills`](https://github.com/multica-ai/andrej-karpathy-skills).
-- Adds labels from an explicit allowlist only.
+- Adds labels from repository labels dynamically by default, including label descriptions in the triage prompt.
 - Synchronizes labels with the `posthog-watcher:` managed prefix without touching human labels.
 - Creates or updates one marker-backed issue comment.
 - Looks up a capped set of related same-repo issues/PRs, including explicit refs and closing PR candidates.
@@ -331,7 +331,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `allow-close` | `false` | Allows explicit trusted close/apply-close commands to close high-confidence issues. |
 | `allow-security-ai` | `false` | Allows suspected security-sensitive reports to be sent to pi/OpenAI. |
 | `dry-run` | `false` | Logs intended GitHub mutations without applying them. |
-| `labels` | `bug,documentation,enhancement,question,needs-info,good-first-issue` | Labels `pi` may request. Missing repo labels are ignored. |
+| `labels` | `*` | Labels `pi` may request. `*` uses all repository labels except labels with `managed-label-prefix`; a comma-separated list restricts selection to matching existing repo labels. Label descriptions are included in the triage prompt when available. |
 | `max-comments` | `20` | Maximum issue comments to include in context. |
 | `max-changed-files` | `5` | Maximum changed files allowed for generated fixes. |
 | `max-diff-lines` | `500` | Maximum added/deleted diff lines allowed for generated fixes. |
