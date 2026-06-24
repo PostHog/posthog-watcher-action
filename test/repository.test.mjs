@@ -147,7 +147,7 @@ test('advanced hardening features are wired', () => {
   assert.match(inputs, /requireReproduction/);
   assert.match(state, /index\.json/);
   assert.match(state, /isConflictLike/);
-  assert.match(prRepair, /posthog-watcher:autofix/);
+  assert.match(prRepair, /not created by posthog-watcher-action/);
   assert.match(prRepair, /getPullRequestFailureContext/);
   assert.match(commands, /PostHog Watcher \$\{command\}/);
   assert.match(snapshot, /posthog-watcher-snapshot/);
@@ -173,6 +173,8 @@ test('dedicated queue modes are wired without requiring OpenAI for enqueue', () 
   assert.match(inputs, /'enqueue'/);
   assert.match(inputs, /'drain-queue'/);
   assert.match(index, /rawInputs\.mode === 'enqueue'/);
+  assert.match(index, /isWatcherPullRequest/);
+  assert.match(index, /skipped non-watcher PR/);
   assert.match(index, /maybeTriggerDrainWorkflow/);
   assert.match(index, /createWorkflowDispatch/);
   assert.match(index, /requireOpenAiApiKey\(rawInputs\)/);

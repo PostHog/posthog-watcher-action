@@ -12,12 +12,6 @@ export interface PullRequestRepairResult {
   repaired: boolean;
 }
 
-async function getPullRequestLabels(octokit: Octokit, pullNumber: number): Promise<string[]> {
-  const { owner, repo } = github.context.repo;
-  const issue = await octokit.rest.issues.get({ owner, repo, issue_number: pullNumber });
-  return issue.data.labels.map((label: string | { name?: string | null }) => (typeof label === 'string' ? label : label.name ?? '')).filter(Boolean);
-}
-
 async function getPullRequestFailureContext(octokit: Octokit, pullNumber: number, headSha: string): Promise<string> {
   const { owner, repo } = github.context.repo;
   const parts: string[] = [];
@@ -78,10 +72,9 @@ export async function repairPullRequest(octokit: Octokit, pullNumber: number, in
     return { conclusion: 'skipped because allow-fix is false', prUrl: pr.html_url, repaired: false };
   }
 
-  const labels = await getPullRequestLabels(octokit, pullNumber);
   const branch = pr.head.ref;
-  if (!branch.startsWith('posthog-watcher/') && !labels.some((label) => label === 'posthog-watcher:autofix' || label === 'posthog-watcher:adopted')) {
-    return { conclusion: 'skipped PR repair because branch is not a watcher branch and PR is not opted in', prUrl: pr.html_url, repaired: false };
+  if (!branch.startsWith('posthog-watcher/')) {
+    return { conclusion: 'skipped PR repair because this PR was not created by posthog-watcher-action', prUrl: pr.html_url, repaired: false };
   }
 
   const failureContext = await getPullRequestFailureContext(octokit, pullNumber, pr.head.sha);
@@ -94,7 +87,7 @@ export async function repairPullRequest(octokit: Octokit, pullNumber: number, in
 
   const prompt = `Repair pull request #${pullNumber}: ${pr.title}
 
-This is PR repair/adoption. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
+This is PR repair for a posthog-watcher-action-created PR. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
 
 Failure/review context:
 \`\`\`

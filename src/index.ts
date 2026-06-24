@@ -36,6 +36,14 @@ async function main(): Promise<void> {
   const octokit = github.getOctokit(rawInputs.githubToken);
 
   if (rawInputs.mode === 'enqueue') {
+    if (isPullRequestPayload()) {
+      const pullNumber = resolveIssueNumber(rawInputs.issueNumber);
+      if (!(await isWatcherPullRequest(octokit, pullNumber))) {
+        core.info(`Skipping enqueue for PR #${pullNumber} because it was not created by posthog-watcher-action.`);
+        core.setOutput('conclusion', 'skipped non-watcher PR');
+        return;
+      }
+    }
     const result = await enqueueCurrentPayload(octokit, rawInputs, command);
     if (result.enqueued) await maybeTriggerDrainWorkflow(octokit, rawInputs);
     core.setOutput('conclusion', result.enqueued ? `queued ${result.item.kind} #${result.item.number}` : `already queued ${result.item.kind} #${result.item.number}`);
@@ -390,6 +398,12 @@ function allowedRepositoryLabels(allowlist: string[], repositoryLabels: Reposito
 function runUrl(): string {
   const { owner, repo } = github.context.repo;
   return `https://github.com/${owner}/${repo}/actions/runs/${github.context.runId}`;
+}
+
+async function isWatcherPullRequest(octokit: Octokit, pullNumber: number): Promise<boolean> {
+  const { owner, repo } = github.context.repo;
+  const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+  return pull.data.head.repo?.full_name === `${owner}/${repo}` && pull.data.head.ref.startsWith('posthog-watcher/');
 }
 
 function isPullRequestPayload(): boolean {

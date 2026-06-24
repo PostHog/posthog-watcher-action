@@ -25564,11 +25564,6 @@ function sleep(ms) {
 }
 
 // src/pr-repair-runner.ts
-async function getPullRequestLabels(octokit, pullNumber) {
-  const { owner, repo } = context2.repo;
-  const issue2 = await octokit.rest.issues.get({ owner, repo, issue_number: pullNumber });
-  return issue2.data.labels.map((label) => typeof label === "string" ? label : label.name ?? "").filter(Boolean);
-}
 async function getPullRequestFailureContext(octokit, pullNumber, headSha) {
   const { owner, repo } = context2.repo;
   const parts = [];
@@ -25623,10 +25618,9 @@ async function repairPullRequest(octokit, pullNumber, inputs, command) {
     info("Skipping PR repair because allow-fix is false.");
     return { conclusion: "skipped because allow-fix is false", prUrl: pr.html_url, repaired: false };
   }
-  const labels = await getPullRequestLabels(octokit, pullNumber);
   const branch = pr.head.ref;
-  if (!branch.startsWith("posthog-watcher/") && !labels.some((label) => label === "posthog-watcher:autofix" || label === "posthog-watcher:adopted")) {
-    return { conclusion: "skipped PR repair because branch is not a watcher branch and PR is not opted in", prUrl: pr.html_url, repaired: false };
+  if (!branch.startsWith("posthog-watcher/")) {
+    return { conclusion: "skipped PR repair because this PR was not created by posthog-watcher-action", prUrl: pr.html_url, repaired: false };
   }
   const failureContext = await getPullRequestFailureContext(octokit, pullNumber, pr.head.sha);
   if ((command === "fix-ci" || command === "address-review") && !failureContext.trim()) {
@@ -25637,7 +25631,7 @@ async function repairPullRequest(octokit, pullNumber, inputs, command) {
   const expectedHeadOid = await git(["rev-parse", `origin/${branch}`]);
   const prompt = `Repair pull request #${pullNumber}: ${pr.title}
 
-This is PR repair/adoption. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
+This is PR repair for a posthog-watcher-action-created PR. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
 
 Failure/review context:
 \`\`\`
@@ -26010,6 +26004,14 @@ async function main() {
   const rawInputs = getInputs();
   const octokit = getOctokit(rawInputs.githubToken);
   if (rawInputs.mode === "enqueue") {
+    if (isPullRequestPayload()) {
+      const pullNumber = resolveIssueNumber(rawInputs.issueNumber);
+      if (!await isWatcherPullRequest(octokit, pullNumber)) {
+        info(`Skipping enqueue for PR #${pullNumber} because it was not created by posthog-watcher-action.`);
+        setOutput("conclusion", "skipped non-watcher PR");
+        return;
+      }
+    }
     const result2 = await enqueueCurrentPayload(octokit, rawInputs, command);
     if (result2.enqueued) await maybeTriggerDrainWorkflow(octokit, rawInputs);
     setOutput("conclusion", result2.enqueued ? `queued ${result2.item.kind} #${result2.item.number}` : `already queued ${result2.item.kind} #${result2.item.number}`);
@@ -26303,6 +26305,11 @@ function allowedRepositoryLabels(allowlist, repositoryLabels, managedLabelPrefix
 function runUrl3() {
   const { owner, repo } = context2.repo;
   return `https://github.com/${owner}/${repo}/actions/runs/${context2.runId}`;
+}
+async function isWatcherPullRequest(octokit, pullNumber) {
+  const { owner, repo } = context2.repo;
+  const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+  return pull.data.head.repo?.full_name === `${owner}/${repo}` && pull.data.head.ref.startsWith("posthog-watcher/");
 }
 function isPullRequestPayload() {
   const payload = context2.payload;

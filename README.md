@@ -21,7 +21,7 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Creates watcher commits through GitHub's commit API, like `planetscale/ghcommit-action`, so commits are signed by GitHub's GPG key and show as Verified.
 - Uses `.github/pull_request_template.md` as the base draft PR body when the host repository provides one, then appends watcher details.
 - Can enforce reproduction-first issue fixes with a wrapper-owned command that must fail before the fix and pass after it.
-- Supports same-repo PR repair/adoption for trusted fix commands; fork PRs are skipped.
+- Supports PR repair for PRs created by this action; commands/review events on other PRs are ignored.
 - Pulls failing GitHub Actions job log snippets and review comments into PR repair prompts when available.
 - Supports manual commit review mode for selected commits.
 - Supports capped scheduled backlog sweeps.
@@ -171,16 +171,16 @@ If `require-reproduction: 'true'` is set without `reproduction-command`, the act
 
 After reproduction/validation and diff guardrails pass, the action runs a second independent read-only `pi` review of the generated diff. If the review gate rejects the diff and repair attempts remain, the rejection reason is fed back into the next repair attempt. The PR is skipped unless this review gate eventually approves with at least 75% confidence.
 
-## PR repair/adoption
+## PR repair
 
-For issue comments on pull requests, `@posthog-watcher fix`, `fix ci`, `address review`, and `rebase` can repair the existing PR branch when all of these are true:
+For issue comments or review comments on pull requests created by this action, `@posthog-watcher fix`, `fix ci`, `address review`, and `rebase` can repair the existing PR branch when all of these are true:
 
 - `allow-fix: 'true'`
-- the PR branch is in the same repository
+- the PR branch is in the same repository and starts with `posthog-watcher/`
 - diff guardrails pass
 - the independent review gate approves
 
-Fork PRs are skipped in this MVP because `GITHUB_TOKEN` cannot safely push to fork branches.
+Commands and review events on PRs not created by this action are ignored. Fork PRs are skipped because `GITHUB_TOKEN` cannot safely push to fork branches.
 
 ## Related context and close/apply
 
