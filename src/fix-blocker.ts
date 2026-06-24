@@ -11,7 +11,7 @@ export async function findPreExistingFixBlocker(octokit: Octokit, issue: IssueSn
   }
 
   const relatedPullRequest = relatedItems.find(
-    (item) => item.type === 'pull_request' && item.state === 'open' && (item.reason === 'closing-pr' || item.reason === 'title-search'),
+    (item) => item.type === 'pull_request' && item.state === 'open' && (item.reason === 'closing-pr' || (item.reason === 'title-search' && titleSimilarity(issue.title, item.title) >= 0.3)),
   );
   if (relatedPullRequest) {
     return `An open related PR already appears to address this issue: #${relatedPullRequest.number} ${relatedPullRequest.url}`;

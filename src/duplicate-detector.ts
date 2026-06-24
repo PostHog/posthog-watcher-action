@@ -10,9 +10,17 @@ export interface DuplicateAssessment {
 }
 
 export function assessDuplicate(issue: IssueSnapshot, relatedItems: RelatedItem[]): DuplicateAssessment {
-  const blockingPr = relatedItems.find((item) => item.type === 'pull_request' && item.state === 'open' && (item.reason === 'closing-pr' || item.reason === 'title-search'));
-  if (blockingPr) {
-    return { duplicate: true, score: 1, canonical: blockingPr, blockingPr, reason: `open related PR #${blockingPr.number} already appears to cover this report` };
+  const closingPr = relatedItems.find((item) => item.type === 'pull_request' && item.state === 'open' && item.reason === 'closing-pr');
+  if (closingPr) {
+    return { duplicate: true, score: 1, canonical: closingPr, blockingPr: closingPr, reason: `open related PR #${closingPr.number} already appears to cover this report` };
+  }
+
+  const titleSearchPr = relatedItems
+    .filter((item) => item.type === 'pull_request' && item.state === 'open' && item.reason === 'title-search')
+    .map((item) => ({ item, score: Math.max(similarity(issueText(issue), `${item.title}\n${item.bodyExcerpt}`), signalSimilarity(issueText(issue), `${item.title}\n${item.bodyExcerpt}`)) }))
+    .find((candidate) => candidate.score >= 0.42);
+  if (titleSearchPr) {
+    return { duplicate: true, score: titleSearchPr.score, canonical: titleSearchPr.item, blockingPr: titleSearchPr.item, reason: `open related PR #${titleSearchPr.item.number} is similar enough (${Math.round(titleSearchPr.score * 100)}%) to cover this report` };
   }
 
   let best: { item: RelatedItem; score: number } | undefined;

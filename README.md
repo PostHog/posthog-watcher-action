@@ -184,12 +184,12 @@ Commands and review events on PRs not created by this action are ignored. Fork P
 
 ## Related context and close/apply
 
-The action fetches up to `max-related-items` same-repo issues/PRs from explicit references like `#123`, GitHub issue/PR URLs, title search, and PRs whose bodies contain closing syntax such as `Fixes #123`. Duplicate scoring considers title/body token overlap plus deterministic repro fingerprints such as endpoints, curl URLs, expected/current JSON snippets, and failing test names.
+The action fetches up to `max-related-items` same-repo issues/PRs from explicit references like `#123`, GitHub issue/PR URLs, relevant title search, and PRs whose bodies contain closing syntax such as `Fixes #123`. Duplicate scoring considers title/body token overlap plus deterministic repro fingerprints such as endpoints, curl URLs, expected/current JSON snippets, and failing test names.
 
 Before creating a fix PR, the action deterministically skips PR creation if:
 
 - a related open PR contains closing syntax for the current issue
-- a related open PR is found by title search for the same report
+- a related open PR found by title search is sufficiently similar to the same report
 - an older open issue found by title search has sufficiently similar title tokens
 - triage proposes the issue as `duplicate` or `already-fixed` with a canonical URL, unless that canonical item is a closed unmerged PR
 

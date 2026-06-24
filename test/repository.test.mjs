@@ -71,16 +71,20 @@ test('pre-existing related fixes block duplicate fix PRs', () => {
   const readme = read('README.md');
   assert.match(source, /closing-pr/);
   assert.match(source, /title-search/);
+  assert.match(source, /titleSimilarity\(issue\.title, item\.title\) >= 0\.3/);
   assert.match(source, /older related issue/);
   assert.match(source, /titleSimilarity/);
   const detector = read('src/duplicate-detector.ts');
   assert.match(detector, /signalSimilarity/);
+  assert.match(detector, /candidate\.score >= 0\.42/);
   assert.match(detector, /curl/);
   assert.match(source, /duplicate/);
   assert.match(source, /already-fixed/);
   assert.match(source, /closed unmerged PR/);
   assert.match(source, /merged_at/);
   assert.match(index, /await findPreExistingFixBlocker/);
+  const related = read('src/related.ts');
+  assert.match(related, /titleSimilarity\(issue\.title, item\.title\) >= 0\.2/);
   assert.match(readme, /related open PR contains closing syntax/);
 });
 

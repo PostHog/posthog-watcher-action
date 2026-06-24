@@ -120,17 +120,41 @@ async function searchByTitle(octokit: Octokit, issue: IssueSnapshot, limit: numb
     per_page: Math.min(10, limit),
   });
 
-  return response.data.items.slice(0, limit).map((item) => ({
-    number: item.number,
-    type: item.pull_request ? 'pull_request' : 'issue',
-    state: item.state,
-    title: item.title,
-    url: item.html_url,
-    labels: item.labels.map((label: { name?: string | null }) => label.name ?? '').filter(Boolean),
-    bodyExcerpt: excerpt(item.body ?? ''),
-    createdAt: item.created_at,
-    reason: 'title-search' as const,
-  }));
+  return response.data.items
+    .filter((item) => titleSimilarity(issue.title, item.title) >= 0.2)
+    .slice(0, limit)
+    .map((item) => ({
+      number: item.number,
+      type: item.pull_request ? 'pull_request' : 'issue',
+      state: item.state,
+      title: item.title,
+      url: item.html_url,
+      labels: item.labels.map((label: { name?: string | null }) => label.name ?? '').filter(Boolean),
+      bodyExcerpt: excerpt(item.body ?? ''),
+      createdAt: item.created_at,
+      reason: 'title-search' as const,
+    }));
+}
+
+function titleSimilarity(left: string, right: string): number {
+  const leftTokens = titleTokens(left);
+  const rightTokens = titleTokens(right);
+  if (!leftTokens.size || !rightTokens.size) return 0;
+
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = new Set([...leftTokens, ...rightTokens]).size;
+  return intersection / union;
+}
+
+function titleTokens(title: string): Set<string> {
+  const stopWords = new Set(['the', 'and', 'for', 'with', 'not', 'api', 'endpoint', 'values', 'value', 'correctly', 'wrong']);
+  return new Set(
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length >= 4 && !stopWords.has(token)),
+  );
 }
 
 function excerpt(value: string): string {

@@ -24549,9 +24549,15 @@ function summarizeConclusion(response) {
 
 // src/duplicate-detector.ts
 function assessDuplicate(issue2, relatedItems) {
-  const blockingPr = relatedItems.find((item) => item.type === "pull_request" && item.state === "open" && (item.reason === "closing-pr" || item.reason === "title-search"));
-  if (blockingPr) {
-    return { duplicate: true, score: 1, canonical: blockingPr, blockingPr, reason: `open related PR #${blockingPr.number} already appears to cover this report` };
+  const closingPr = relatedItems.find((item) => item.type === "pull_request" && item.state === "open" && item.reason === "closing-pr");
+  if (closingPr) {
+    return { duplicate: true, score: 1, canonical: closingPr, blockingPr: closingPr, reason: `open related PR #${closingPr.number} already appears to cover this report` };
+  }
+  const titleSearchPr = relatedItems.filter((item) => item.type === "pull_request" && item.state === "open" && item.reason === "title-search").map((item) => ({ item, score: Math.max(similarity(issueText(issue2), `${item.title}
+${item.bodyExcerpt}`), signalSimilarity(issueText(issue2), `${item.title}
+${item.bodyExcerpt}`)) })).find((candidate) => candidate.score >= 0.42);
+  if (titleSearchPr) {
+    return { duplicate: true, score: titleSearchPr.score, canonical: titleSearchPr.item, blockingPr: titleSearchPr.item, reason: `open related PR #${titleSearchPr.item.number} is similar enough (${Math.round(titleSearchPr.score * 100)}%) to cover this report` };
   }
   let best;
   for (const item of relatedItems) {
@@ -24618,7 +24624,7 @@ async function findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, 
     return `${duplicate.reason}: #${duplicate.canonical.number} ${duplicate.canonical.url}`;
   }
   const relatedPullRequest = relatedItems.find(
-    (item) => item.type === "pull_request" && item.state === "open" && (item.reason === "closing-pr" || item.reason === "title-search")
+    (item) => item.type === "pull_request" && item.state === "open" && (item.reason === "closing-pr" || item.reason === "title-search" && titleSimilarity(issue2.title, item.title) >= 0.3)
   );
   if (relatedPullRequest) {
     return `An open related PR already appears to address this issue: #${relatedPullRequest.number} ${relatedPullRequest.url}`;
@@ -25745,7 +25751,7 @@ async function searchByTitle(octokit, issue2, limit) {
     q: `repo:${owner}/${repo} is:open ${terms.join(" ")}`,
     per_page: Math.min(10, limit)
   });
-  return response.data.items.slice(0, limit).map((item) => ({
+  return response.data.items.filter((item) => titleSimilarity2(issue2.title, item.title) >= 0.2).slice(0, limit).map((item) => ({
     number: item.number,
     type: item.pull_request ? "pull_request" : "issue",
     state: item.state,
@@ -25756,6 +25762,20 @@ async function searchByTitle(octokit, issue2, limit) {
     createdAt: item.created_at,
     reason: "title-search"
   }));
+}
+function titleSimilarity2(left, right) {
+  const leftTokens = titleTokens2(left);
+  const rightTokens = titleTokens2(right);
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = (/* @__PURE__ */ new Set([...leftTokens, ...rightTokens])).size;
+  return intersection / union;
+}
+function titleTokens2(title) {
+  const stopWords = /* @__PURE__ */ new Set(["the", "and", "for", "with", "not", "api", "endpoint", "values", "value", "correctly", "wrong"]);
+  return new Set(
+    title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((token) => token.length >= 4 && !stopWords.has(token))
+  );
 }
 function excerpt(value) {
   return value.length > 1e3 ? `${value.slice(0, 1e3)}\u2026` : value;
