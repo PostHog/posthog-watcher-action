@@ -112,7 +112,7 @@ inputs:
     required: false
     default: auto
   trigger-drain-workflow:
-    description: In enqueue mode, dispatch drain-workflow after adding a new queue item. Requires actions: write permission.
+    description: 'In enqueue mode, dispatch drain-workflow after adding a new queue item. Requires actions: write permission.'
     required: false
     default: 'false'
   drain-workflow:
