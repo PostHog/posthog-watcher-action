@@ -66,7 +66,9 @@ test('pre-existing related fixes block duplicate fix PRs', () => {
   assert.match(detector, /curl/);
   assert.match(source, /duplicate/);
   assert.match(source, /already-fixed/);
-  assert.match(index, /findPreExistingFixBlocker/);
+  assert.match(source, /closed unmerged PR/);
+  assert.match(source, /merged_at/);
+  assert.match(index, /await findPreExistingFixBlocker/);
   assert.match(readme, /related open PR contains closing syntax/);
 });
 

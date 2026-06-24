@@ -1,9 +1,11 @@
+import * as core from '@actions/core';
 import type { DuplicateAssessment } from './duplicate-detector.js';
+import type { Octokit } from './github.js';
 import type { IssueSnapshot } from './issue-context.js';
 import type { RelatedItem } from './related.js';
 import type { TriageResult } from './triage-schema.js';
 
-export function findPreExistingFixBlocker(issue: IssueSnapshot, relatedItems: RelatedItem[], triage: TriageResult, duplicate: DuplicateAssessment): string | undefined {
+export async function findPreExistingFixBlocker(octokit: Octokit, issue: IssueSnapshot, relatedItems: RelatedItem[], triage: TriageResult, duplicate: DuplicateAssessment): Promise<string | undefined> {
   if (duplicate.duplicate && duplicate.canonical) {
     return `${duplicate.reason}: #${duplicate.canonical.number} ${duplicate.canonical.url}`;
   }
@@ -27,10 +29,34 @@ export function findPreExistingFixBlocker(issue: IssueSnapshot, relatedItems: Re
     (triage.closeProposal.category === 'duplicate' || triage.closeProposal.category === 'already-fixed') &&
     triage.closeProposal.canonicalUrl
   ) {
+    const canonicalPullRequest = await getCanonicalPullRequest(octokit, triage.closeProposal.canonicalUrl);
+    if (canonicalPullRequest?.state === 'closed' && !canonicalPullRequest.merged) {
+      core.info(`Triage proposed closed unmerged PR ${triage.closeProposal.canonicalUrl} as canonical; continuing fix attempt because it did not land.`);
+      return undefined;
+    }
     return `Triage proposed this issue as ${triage.closeProposal.category} of ${triage.closeProposal.canonicalUrl}; skipping a duplicate fix PR.`;
   }
 
   return undefined;
+}
+
+async function getCanonicalPullRequest(octokit: Octokit, url: string): Promise<{ state: 'open' | 'closed'; merged: boolean } | undefined> {
+  const parsed = parseGitHubPullRequestUrl(url);
+  if (!parsed) return undefined;
+
+  try {
+    const response = await octokit.rest.pulls.get({ owner: parsed.owner, repo: parsed.repo, pull_number: parsed.number });
+    return { state: response.data.state as 'open' | 'closed', merged: Boolean(response.data.merged_at) };
+  } catch (error) {
+    core.warning(`Could not verify canonical PR ${url}: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
+}
+
+function parseGitHubPullRequestUrl(url: string): { owner: string; repo: string; number: number } | undefined {
+  const match = url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#].*)?$/i);
+  if (!match?.[1] || !match[2] || !match[3]) return undefined;
+  return { owner: match[1], repo: match[2], number: Number(match[3]) };
 }
 
 function titleSimilarity(left: string, right: string): number {

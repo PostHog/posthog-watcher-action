@@ -24601,7 +24601,7 @@ function tokens(value) {
 }
 
 // src/fix-blocker.ts
-function findPreExistingFixBlocker(issue2, relatedItems, triage, duplicate) {
+async function findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, duplicate) {
   if (duplicate.duplicate && duplicate.canonical) {
     return `${duplicate.reason}: #${duplicate.canonical.number} ${duplicate.canonical.url}`;
   }
@@ -24618,9 +24618,30 @@ function findPreExistingFixBlocker(issue2, relatedItems, triage, duplicate) {
     return `An older related issue appears to cover the same report: #${olderDuplicateIssue.number} ${olderDuplicateIssue.url}`;
   }
   if (triage.closeProposal.propose && (triage.closeProposal.category === "duplicate" || triage.closeProposal.category === "already-fixed") && triage.closeProposal.canonicalUrl) {
+    const canonicalPullRequest = await getCanonicalPullRequest(octokit, triage.closeProposal.canonicalUrl);
+    if (canonicalPullRequest?.state === "closed" && !canonicalPullRequest.merged) {
+      info(`Triage proposed closed unmerged PR ${triage.closeProposal.canonicalUrl} as canonical; continuing fix attempt because it did not land.`);
+      return void 0;
+    }
     return `Triage proposed this issue as ${triage.closeProposal.category} of ${triage.closeProposal.canonicalUrl}; skipping a duplicate fix PR.`;
   }
   return void 0;
+}
+async function getCanonicalPullRequest(octokit, url) {
+  const parsed = parseGitHubPullRequestUrl(url);
+  if (!parsed) return void 0;
+  try {
+    const response = await octokit.rest.pulls.get({ owner: parsed.owner, repo: parsed.repo, pull_number: parsed.number });
+    return { state: response.data.state, merged: Boolean(response.data.merged_at) };
+  } catch (error2) {
+    warning(`Could not verify canonical PR ${url}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    return void 0;
+  }
+}
+function parseGitHubPullRequestUrl(url) {
+  const match = url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/?#].*)?$/i);
+  if (!match?.[1] || !match[2] || !match[3]) return void 0;
+  return { owner: match[1], repo: match[2], number: Number(match[3]) };
 }
 function titleSimilarity(left, right) {
   const leftTokens = titleTokens(left);
@@ -26173,7 +26194,7 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
     for (const label of staleLabels) await removeLabel(octokit, issue2.number, label);
     await addLabels(octokit, issue2.number, allLabels);
   }
-  const fixBlocker = findPreExistingFixBlocker(issue2, relatedItems, triage, duplicate) ?? fixCommandBlocker(inputs, command);
+  const fixBlocker = await findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, duplicate) ?? fixCommandBlocker(inputs, command);
   if (fixBlocker) info(`Skipping fix PR: ${fixBlocker}`);
   const prUrl = security.sensitive || fixBlocker ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs);
   let closed = false;

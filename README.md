@@ -191,9 +191,9 @@ Before creating a fix PR, the action deterministically skips PR creation if:
 - a related open PR contains closing syntax for the current issue
 - a related open PR is found by title search for the same report
 - an older open issue found by title search has sufficiently similar title tokens
-- triage proposes the issue as `duplicate` or `already-fixed` with a canonical URL
+- triage proposes the issue as `duplicate` or `already-fixed` with a canonical URL, unless that canonical item is a closed unmerged PR
 
-This prevents opening another draft PR for work that already appears covered.
+This prevents opening another draft PR for work that already appears covered, while allowing a new fix attempt when a prior proposed PR was closed without landing.
 
 Actual issue closing requires all of:
 
