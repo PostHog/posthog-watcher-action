@@ -62,6 +62,9 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Install ripgrep for pi grep tool
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - uses: PostHog/posthog-watcher-action@v0
         with:
           openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
@@ -307,6 +310,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Install ripgrep for pi grep tool
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
       - uses: PostHog/posthog-watcher-action@v0
         with:
           openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
@@ -369,7 +374,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 ## Guardrails
 
-- Triage uses read-only tools: `read`, `grep`, `find`, `ls`.
+- Triage uses read-only tools: `read`, `grep`, `find`, `ls`. The `grep` tool requires `rg`/ripgrep on the runner; install it in host workflows before invoking this action, for example `sudo apt-get update && sudo apt-get install -y ripgrep`.
 - By default, pi is **not** run with `--approve`. Set `approve-project-resources: true` only for trusted repositories when host repo `AGENTS.md`, `.pi`, and `.agents` resources should be available in CI.
 - Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only `OPENAI_API_KEY` to the pi process, and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
 - The wrapper, not `pi`, performs GitHub API mutations.
