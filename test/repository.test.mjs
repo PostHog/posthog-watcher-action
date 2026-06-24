@@ -50,6 +50,8 @@ test('pull request review comments trigger watcher PR repair', () => {
 test('fix PRs use stable per-issue branches for reuse', () => {
   const source = read('src/fix-runner.ts');
   assert.match(source, /posthog-watcher\/issue-\$\{issue\.number\}/);
+  assert.match(source, /title: `fix: \$\{issue\.title\}`/);
+  assert.doesNotMatch(source, /title: `Fix #\$\{issue\.number\}/);
   assert.match(source, /findOpenPullRequestForBranch/);
   assert.match(source, /remoteBranchExists/);
   assert.match(source, /runIssueRepair/);
@@ -160,13 +162,19 @@ test('dedicated queue modes are wired without requiring OpenAI for enqueue', () 
   const readme = read('README.md');
   assert.match(action, /enqueue, or drain-queue/);
   assert.match(action, /queued-mode/);
+  assert.match(action, /trigger-drain-workflow/);
+  assert.match(action, /drain-workflow/);
   assert.match(action, /max-queue-items/);
   assert.match(action, /max-queue-attempts/);
   assert.match(action, /required: false/);
   assert.match(inputs, /optionalSecret\('openai-api-key'\)/);
+  assert.match(inputs, /triggerDrainWorkflow/);
+  assert.match(inputs, /drainWorkflow/);
   assert.match(inputs, /'enqueue'/);
   assert.match(inputs, /'drain-queue'/);
   assert.match(index, /rawInputs\.mode === 'enqueue'/);
+  assert.match(index, /maybeTriggerDrainWorkflow/);
+  assert.match(index, /createWorkflowDispatch/);
   assert.match(index, /requireOpenAiApiKey\(rawInputs\)/);
   assert.match(index, /inputs\.mode === 'drain-queue'/);
   assert.match(index, /replyToCommand\(octokit, item\.number, itemInputs, item\.command, await queuedCommandBody/);
@@ -176,6 +184,8 @@ test('dedicated queue modes are wired without requiring OpenAI for enqueue', () 
   assert.match(queue, /commandSourceKey/);
   assert.match(queue, /attempts: 0/);
   assert.match(readme, /Dedicated queue worker/);
+  assert.match(readme, /trigger-drain-workflow/);
+  assert.match(readme, /actions: write/);
   assert.match(readme, /without `pi` or `openai-api-key`/);
 });
 

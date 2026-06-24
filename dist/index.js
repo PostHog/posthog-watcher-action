@@ -25195,7 +25195,7 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
       return existingPr.url;
     }
     const prUrl = await createDraftPullRequest(octokit, {
-      title: `Fix #${issue2.number}: ${issue2.title}`,
+      title: `fix: ${issue2.title}`,
       head: branch,
       base,
       body: buildPullRequestBody(issue2, triage, repair.files, inputs.validationCommand, pullRequestTemplate)
@@ -25299,6 +25299,8 @@ function getInputs() {
     maxSweepFixItems: parseNonNegativeInt(getInput("max-sweep-fix-items") || "0", "max-sweep-fix-items"),
     sweepQuery: getInput("sweep-query") || "is:issue is:open archived:false",
     queuedMode: normalizeQueuedMode(getInput("queued-mode") || "auto"),
+    triggerDrainWorkflow: parseBoolean(getInput("trigger-drain-workflow")),
+    drainWorkflow: getInput("drain-workflow") || "posthog-watcher-worker.yml",
     maxQueueItems: parsePositiveInt(getInput("max-queue-items") || "5", "max-queue-items"),
     maxQueueAttempts: parsePositiveInt(getInput("max-queue-attempts") || "3", "max-queue-attempts"),
     maxPiCalls: parsePositiveInt(getInput("max-pi-calls") || "16", "max-pi-calls"),
@@ -26009,6 +26011,7 @@ async function main() {
   const octokit = getOctokit(rawInputs.githubToken);
   if (rawInputs.mode === "enqueue") {
     const result2 = await enqueueCurrentPayload(octokit, rawInputs, command);
+    if (result2.enqueued) await maybeTriggerDrainWorkflow(octokit, rawInputs);
     setOutput("conclusion", result2.enqueued ? `queued ${result2.item.kind} #${result2.item.number}` : `already queued ${result2.item.kind} #${result2.item.number}`);
     setOutput("triage-json", JSON.stringify(result2));
     return;
@@ -26252,6 +26255,26 @@ ${commentBody}`);
 function fixCommandBlocker(inputs, command) {
   if (!inputs.requireFixCommand) return void 0;
   return command.command === "fix" || command.command === "fix-ci" || command.command === "address-review" || command.command === "rebase" ? void 0 : "require-fix-command is enabled and no trusted fix command was provided";
+}
+async function maybeTriggerDrainWorkflow(octokit, inputs) {
+  if (!inputs.triggerDrainWorkflow) return;
+  const { owner, repo } = context2.repo;
+  const ref = defaultBranchRef();
+  try {
+    await octokit.rest.actions.createWorkflowDispatch({
+      owner,
+      repo,
+      workflow_id: inputs.drainWorkflow,
+      ref
+    });
+    info(`Dispatched ${inputs.drainWorkflow} on ${ref} to drain the watcher queue.`);
+  } catch (error2) {
+    warning(`Queued item, but could not dispatch ${inputs.drainWorkflow}. Ensure the enqueue workflow grants actions: write. ${error2 instanceof Error ? error2.message : String(error2)}`);
+  }
+}
+function defaultBranchRef() {
+  const payload = context2.payload;
+  return payload.repository?.default_branch ?? "main";
 }
 function shouldCloseIssue(inputs, command, proposed, confidence, duplicate, duplicateScore, securitySensitive) {
   return Boolean(command.applyClose && inputs.allowClose && !securitySensitive && (proposed && confidence >= 0.95 || duplicate && duplicateScore >= 0.55));

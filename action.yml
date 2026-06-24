@@ -111,6 +111,14 @@ inputs:
     description: Default processing mode stored by enqueue mode when no trusted watcher command is present. One of auto, triage, investigate, or fix.
     required: false
     default: auto
+  trigger-drain-workflow:
+    description: In enqueue mode, dispatch drain-workflow after adding a new queue item. Requires actions: write permission.
+    required: false
+    default: 'false'
+  drain-workflow:
+    description: Workflow filename or ID to dispatch when trigger-drain-workflow is true
+    required: false
+    default: posthog-watcher-worker.yml
   max-queue-items:
     description: Maximum queued items to drain sequentially in one drain-queue run
     required: false

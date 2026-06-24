@@ -30,6 +30,8 @@ export interface ActionInputs {
   maxSweepFixItems: number;
   sweepQuery: string;
   queuedMode: QueuedMode;
+  triggerDrainWorkflow: boolean;
+  drainWorkflow: string;
   maxQueueItems: number;
   maxQueueAttempts: number;
   maxPiCalls: number;
@@ -73,6 +75,8 @@ export function getInputs(): ActionInputs {
     maxSweepFixItems: parseNonNegativeInt(core.getInput('max-sweep-fix-items') || '0', 'max-sweep-fix-items'),
     sweepQuery: core.getInput('sweep-query') || 'is:issue is:open archived:false',
     queuedMode: normalizeQueuedMode(core.getInput('queued-mode') || 'auto'),
+    triggerDrainWorkflow: parseBoolean(core.getInput('trigger-drain-workflow')),
+    drainWorkflow: core.getInput('drain-workflow') || 'posthog-watcher-worker.yml',
     maxQueueItems: parsePositiveInt(core.getInput('max-queue-items') || '5', 'max-queue-items'),
     maxQueueAttempts: parsePositiveInt(core.getInput('max-queue-attempts') || '3', 'max-queue-attempts'),
     maxPiCalls: parsePositiveInt(core.getInput('max-pi-calls') || '16', 'max-pi-calls'),

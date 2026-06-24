@@ -59,7 +59,7 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
     }
 
     const prUrl = await createDraftPullRequest(octokit, {
-      title: `Fix #${issue.number}: ${issue.title}`,
+      title: `fix: ${issue.title}`,
       head: branch,
       base,
       body: buildPullRequestBody(issue, triage, repair.files, inputs.validationCommand, pullRequestTemplate),

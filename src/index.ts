@@ -37,6 +37,7 @@ async function main(): Promise<void> {
 
   if (rawInputs.mode === 'enqueue') {
     const result = await enqueueCurrentPayload(octokit, rawInputs, command);
+    if (result.enqueued) await maybeTriggerDrainWorkflow(octokit, rawInputs);
     core.setOutput('conclusion', result.enqueued ? `queued ${result.item.kind} #${result.item.number}` : `already queued ${result.item.kind} #${result.item.number}`);
     core.setOutput('triage-json', JSON.stringify(result));
     return;
@@ -325,6 +326,29 @@ function fixCommandBlocker(inputs: ActionInputs, command: CommandResolution): st
   return command.command === 'fix' || command.command === 'fix-ci' || command.command === 'address-review' || command.command === 'rebase'
     ? undefined
     : 'require-fix-command is enabled and no trusted fix command was provided';
+}
+
+async function maybeTriggerDrainWorkflow(octokit: Octokit, inputs: ActionInputs): Promise<void> {
+  if (!inputs.triggerDrainWorkflow) return;
+
+  const { owner, repo } = github.context.repo;
+  const ref = defaultBranchRef();
+  try {
+    await octokit.rest.actions.createWorkflowDispatch({
+      owner,
+      repo,
+      workflow_id: inputs.drainWorkflow,
+      ref,
+    });
+    core.info(`Dispatched ${inputs.drainWorkflow} on ${ref} to drain the watcher queue.`);
+  } catch (error) {
+    core.warning(`Queued item, but could not dispatch ${inputs.drainWorkflow}. Ensure the enqueue workflow grants actions: write. ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function defaultBranchRef(): string {
+  const payload = github.context.payload as { repository?: { default_branch?: string } };
+  return payload.repository?.default_branch ?? 'main';
 }
 
 function shouldCloseIssue(

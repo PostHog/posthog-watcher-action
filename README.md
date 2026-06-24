@@ -242,7 +242,7 @@ concurrency:
 
 ## Dedicated queue worker
 
-For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or `openai-api-key`. Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Pull request review comments and commented/changes-requested reviews are treated as `@posthog-watcher address review` for same-repo watcher PRs.
+For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or `openai-api-key`. Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Set `trigger-drain-workflow: true` to dispatch the worker immediately after a new queue item is written. Pull request review comments and commented/changes-requested reviews are treated as `@posthog-watcher address review` for same-repo watcher PRs.
 
 Event enqueue workflow:
 
@@ -265,6 +265,7 @@ permissions:
   contents: write # write queue.json to state branch
   issues: read
   pull-requests: read
+  actions: write # optional: dispatch the drain workflow immediately
 
 jobs:
   enqueue:
@@ -276,6 +277,8 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: enqueue
           queued-mode: auto
+          trigger-drain-workflow: 'true'
+          drain-workflow: posthog-watcher-worker.yml
           state-branch: posthog-watcher-state
 ```
 
@@ -351,6 +354,8 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `max-sweep-fix-items` | `0` | Maximum sweep items that may attempt fixes. |
 | `sweep-query` | `is:issue is:open archived:false` | Search query suffix for `sweep` mode. |
 | `queued-mode` | `auto` | Default processing mode stored by `enqueue` when no trusted watcher command is present: `auto`, `triage`, `investigate`, or `fix`. |
+| `trigger-drain-workflow` | `false` | In `enqueue` mode, dispatch `drain-workflow` after writing a new queue item. Requires `actions: write`; failures are warnings because cron/manual drain can still process the queue. |
+| `drain-workflow` | `posthog-watcher-worker.yml` | Workflow filename or ID to dispatch when `trigger-drain-workflow` is true. |
 | `max-queue-items` | `5` | Maximum queued items to drain sequentially in one `drain-queue` run. |
 | `max-queue-attempts` | `3` | Maximum failed drain attempts before dropping a queued item. |
 | `max-pi-calls` | `16` | Maximum pi calls allowed for one action run. |
