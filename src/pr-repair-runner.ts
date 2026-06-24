@@ -4,6 +4,7 @@ import { git } from './git.js';
 import type { Octokit } from './github.js';
 import type { ActionInputs } from './inputs.js';
 import { runPullRequestRepairSequence } from './repair-run.js';
+import { commitChangesWithGitHubSignature } from './signed-commit.js';
 
 export interface PullRequestRepairResult {
   conclusion: string;
@@ -89,6 +90,7 @@ export async function repairPullRequest(octokit: Octokit, pullNumber: number, in
   }
   await git(['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
   await git(['checkout', '-B', branch, `origin/${branch}`]);
+  const expectedHeadOid = await git(['rev-parse', `origin/${branch}`]);
 
   const prompt = `Repair pull request #${pullNumber}: ${pr.title}
 
@@ -115,10 +117,12 @@ ${pr.body ?? '(empty)'}
     return { conclusion: 'dry-run PR repair completed', prUrl: pr.html_url, repaired: true };
   }
 
-  await git(['config', 'user.name', 'posthog-watcher-action']);
-  await git(['config', 'user.email', 'posthog-watcher-action@users.noreply.github.com']);
-  await git(['add', '--', ...repair.files]);
-  await git(['commit', '-m', `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`]);
-  await git(['push', 'origin', branch]);
+  const commit = await commitChangesWithGitHubSignature(octokit, {
+    branch,
+    message: `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`,
+    expectedHeadOid,
+    createBranch: false,
+  });
+  core.info(`Created GitHub-signed commit: ${commit.url}`);
   return { conclusion: 'PR branch repaired', prUrl: pr.html_url, repaired: true };
 }

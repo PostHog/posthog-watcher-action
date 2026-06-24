@@ -1064,14 +1064,14 @@ var require_util = __commonJS({
         }
         const port = url.port != null ? url.port : url.protocol === "https:" ? 443 : 80;
         let origin = url.origin != null ? url.origin : `${url.protocol || ""}//${url.hostname || ""}:${port}`;
-        let path2 = url.path != null ? url.path : `${url.pathname || ""}${url.search || ""}`;
+        let path3 = url.path != null ? url.path : `${url.pathname || ""}${url.search || ""}`;
         if (origin[origin.length - 1] === "/") {
           origin = origin.slice(0, origin.length - 1);
         }
-        if (path2 && path2[0] !== "/") {
-          path2 = `/${path2}`;
+        if (path3 && path3[0] !== "/") {
+          path3 = `/${path3}`;
         }
-        return new URL(`${origin}${path2}`);
+        return new URL(`${origin}${path3}`);
       }
       if (!isHttpOrHttpsPrefixed(url.origin || url.protocol)) {
         throw new InvalidArgumentError("Invalid URL protocol: the URL must start with `http:` or `https:`.");
@@ -1522,39 +1522,39 @@ var require_diagnostics = __commonJS({
       });
       diagnosticsChannel.channel("undici:client:sendHeaders").subscribe((evt) => {
         const {
-          request: { method, path: path2, origin }
+          request: { method, path: path3, origin }
         } = evt;
-        debuglog("sending request to %s %s/%s", method, origin, path2);
+        debuglog("sending request to %s %s/%s", method, origin, path3);
       });
       diagnosticsChannel.channel("undici:request:headers").subscribe((evt) => {
         const {
-          request: { method, path: path2, origin },
+          request: { method, path: path3, origin },
           response: { statusCode }
         } = evt;
         debuglog(
           "received response to %s %s/%s - HTTP %d",
           method,
           origin,
-          path2,
+          path3,
           statusCode
         );
       });
       diagnosticsChannel.channel("undici:request:trailers").subscribe((evt) => {
         const {
-          request: { method, path: path2, origin }
+          request: { method, path: path3, origin }
         } = evt;
-        debuglog("trailers received from %s %s/%s", method, origin, path2);
+        debuglog("trailers received from %s %s/%s", method, origin, path3);
       });
       diagnosticsChannel.channel("undici:request:error").subscribe((evt) => {
         const {
-          request: { method, path: path2, origin },
+          request: { method, path: path3, origin },
           error: error2
         } = evt;
         debuglog(
           "request to %s %s/%s errored - %s",
           method,
           origin,
-          path2,
+          path3,
           error2.message
         );
       });
@@ -1603,9 +1603,9 @@ var require_diagnostics = __commonJS({
         });
         diagnosticsChannel.channel("undici:client:sendHeaders").subscribe((evt) => {
           const {
-            request: { method, path: path2, origin }
+            request: { method, path: path3, origin }
           } = evt;
-          debuglog("sending request to %s %s/%s", method, origin, path2);
+          debuglog("sending request to %s %s/%s", method, origin, path3);
         });
       }
       diagnosticsChannel.channel("undici:websocket:open").subscribe((evt) => {
@@ -1668,7 +1668,7 @@ var require_request = __commonJS({
     var kHandler = /* @__PURE__ */ Symbol("handler");
     var Request = class {
       constructor(origin, {
-        path: path2,
+        path: path3,
         method,
         body,
         headers,
@@ -1683,11 +1683,11 @@ var require_request = __commonJS({
         expectContinue,
         servername
       }, handler2) {
-        if (typeof path2 !== "string") {
+        if (typeof path3 !== "string") {
           throw new InvalidArgumentError("path must be a string");
-        } else if (path2[0] !== "/" && !(path2.startsWith("http://") || path2.startsWith("https://")) && method !== "CONNECT") {
+        } else if (path3[0] !== "/" && !(path3.startsWith("http://") || path3.startsWith("https://")) && method !== "CONNECT") {
           throw new InvalidArgumentError("path must be an absolute URL or start with a slash");
-        } else if (invalidPathRegex.test(path2)) {
+        } else if (invalidPathRegex.test(path3)) {
           throw new InvalidArgumentError("invalid request path");
         }
         if (typeof method !== "string") {
@@ -1753,7 +1753,7 @@ var require_request = __commonJS({
         this.completed = false;
         this.aborted = false;
         this.upgrade = upgrade || null;
-        this.path = query ? buildURL(path2, query) : path2;
+        this.path = query ? buildURL(path3, query) : path3;
         this.origin = origin;
         this.idempotent = idempotent == null ? method === "HEAD" || method === "GET" : idempotent;
         this.blocking = blocking == null ? false : blocking;
@@ -6375,7 +6375,7 @@ var require_client_h1 = __commonJS({
       return method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && method !== "TRACE" && method !== "CONNECT";
     }
     function writeH1(client, request2) {
-      const { method, path: path2, host, upgrade, blocking, reset } = request2;
+      const { method, path: path3, host, upgrade, blocking, reset } = request2;
       let { body, headers, contentLength } = request2;
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH" || method === "QUERY" || method === "PROPFIND" || method === "PROPPATCH";
       if (util.isFormDataLike(body)) {
@@ -6442,7 +6442,7 @@ var require_client_h1 = __commonJS({
       if (blocking) {
         socket[kBlocking] = true;
       }
-      let header = `${method} ${path2} HTTP/1.1\r
+      let header = `${method} ${path3} HTTP/1.1\r
 `;
       if (typeof host === "string") {
         header += `host: ${host}\r
@@ -6968,7 +6968,7 @@ var require_client_h2 = __commonJS({
     }
     function writeH2(client, request2) {
       const session = client[kHTTP2Session];
-      const { method, path: path2, host, upgrade, expectContinue, signal, headers: reqHeaders } = request2;
+      const { method, path: path3, host, upgrade, expectContinue, signal, headers: reqHeaders } = request2;
       let { body } = request2;
       if (upgrade) {
         util.errorRequest(client, request2, new Error("Upgrade not supported for H2"));
@@ -7035,7 +7035,7 @@ var require_client_h2 = __commonJS({
         });
         return true;
       }
-      headers[HTTP2_HEADER_PATH] = path2;
+      headers[HTTP2_HEADER_PATH] = path3;
       headers[HTTP2_HEADER_SCHEME] = "https";
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH";
       if (body && typeof body.read === "function") {
@@ -7388,9 +7388,9 @@ var require_redirect_handler = __commonJS({
           return this.handler.onHeaders(statusCode, headers, resume, statusText);
         }
         const { origin, pathname, search } = util.parseURL(new URL(this.location, this.opts.origin && new URL(this.opts.path, this.opts.origin)));
-        const path2 = search ? `${pathname}${search}` : pathname;
+        const path3 = search ? `${pathname}${search}` : pathname;
         this.opts.headers = cleanRequestHeaders(this.opts.headers, statusCode === 303, this.opts.origin !== origin);
-        this.opts.path = path2;
+        this.opts.path = path3;
         this.opts.origin = origin;
         this.opts.maxRedirections = 0;
         this.opts.query = null;
@@ -8625,10 +8625,10 @@ var require_proxy_agent = __commonJS({
         };
         const {
           origin,
-          path: path2 = "/",
+          path: path3 = "/",
           headers = {}
         } = opts;
-        opts.path = origin + path2;
+        opts.path = origin + path3;
         if (!("host" in headers) && !("Host" in headers)) {
           const { host } = new URL2(origin);
           headers.host = host;
@@ -10549,20 +10549,20 @@ var require_mock_utils = __commonJS({
       }
       return true;
     }
-    function safeUrl(path2) {
-      if (typeof path2 !== "string") {
-        return path2;
+    function safeUrl(path3) {
+      if (typeof path3 !== "string") {
+        return path3;
       }
-      const pathSegments = path2.split("?");
+      const pathSegments = path3.split("?");
       if (pathSegments.length !== 2) {
-        return path2;
+        return path3;
       }
       const qp = new URLSearchParams(pathSegments.pop());
       qp.sort();
       return [...pathSegments, qp.toString()].join("?");
     }
-    function matchKey(mockDispatch2, { path: path2, method, body, headers }) {
-      const pathMatch = matchValue(mockDispatch2.path, path2);
+    function matchKey(mockDispatch2, { path: path3, method, body, headers }) {
+      const pathMatch = matchValue(mockDispatch2.path, path3);
       const methodMatch = matchValue(mockDispatch2.method, method);
       const bodyMatch = typeof mockDispatch2.body !== "undefined" ? matchValue(mockDispatch2.body, body) : true;
       const headersMatch = matchHeaders(mockDispatch2, headers);
@@ -10584,7 +10584,7 @@ var require_mock_utils = __commonJS({
     function getMockDispatch(mockDispatches, key) {
       const basePath = key.query ? buildURL(key.path, key.query) : key.path;
       const resolvedPath = typeof basePath === "string" ? safeUrl(basePath) : basePath;
-      let matchedMockDispatches = mockDispatches.filter(({ consumed }) => !consumed).filter(({ path: path2 }) => matchValue(safeUrl(path2), resolvedPath));
+      let matchedMockDispatches = mockDispatches.filter(({ consumed }) => !consumed).filter(({ path: path3 }) => matchValue(safeUrl(path3), resolvedPath));
       if (matchedMockDispatches.length === 0) {
         throw new MockNotMatchedError(`Mock dispatch not matched for path '${resolvedPath}'`);
       }
@@ -10622,9 +10622,9 @@ var require_mock_utils = __commonJS({
       }
     }
     function buildKey(opts) {
-      const { path: path2, method, body, headers, query } = opts;
+      const { path: path3, method, body, headers, query } = opts;
       return {
-        path: path2,
+        path: path3,
         method,
         body,
         headers,
@@ -11087,10 +11087,10 @@ var require_pending_interceptors_formatter = __commonJS({
       }
       format(pendingInterceptors) {
         const withPrettyHeaders = pendingInterceptors.map(
-          ({ method, path: path2, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
+          ({ method, path: path3, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
             Method: method,
             Origin: origin,
-            Path: path2,
+            Path: path3,
             "Status code": statusCode,
             Persistent: persist ? PERSISTENT : NOT_PERSISTENT,
             Invocations: timesInvoked,
@@ -15971,9 +15971,9 @@ var require_util6 = __commonJS({
         }
       }
     }
-    function validateCookiePath(path2) {
-      for (let i = 0; i < path2.length; ++i) {
-        const code = path2.charCodeAt(i);
+    function validateCookiePath(path3) {
+      for (let i = 0; i < path3.length; ++i) {
+        const code = path3.charCodeAt(i);
         if (code < 32 || // exclude CTLs (0-31)
         code === 127 || // DEL
         code === 59) {
@@ -18666,11 +18666,11 @@ var require_undici = __commonJS({
           if (typeof opts.path !== "string") {
             throw new InvalidArgumentError("invalid opts.path");
           }
-          let path2 = opts.path;
+          let path3 = opts.path;
           if (!opts.path.startsWith("/")) {
-            path2 = `/${path2}`;
+            path3 = `/${path3}`;
           }
-          url = new URL(util.parseOrigin(url).origin + path2);
+          url = new URL(util.parseOrigin(url).origin + path3);
         } else {
           if (!opts) {
             opts = typeof url === "object" ? url : {};
@@ -20160,8 +20160,8 @@ var Context = class {
       if ((0, import_fs2.existsSync)(process.env.GITHUB_EVENT_PATH)) {
         this.payload = JSON.parse((0, import_fs2.readFileSync)(process.env.GITHUB_EVENT_PATH, { encoding: "utf8" }));
       } else {
-        const path2 = process.env.GITHUB_EVENT_PATH;
-        process.stdout.write(`GITHUB_EVENT_PATH ${path2} does not exist${import_os3.EOL}`);
+        const path3 = process.env.GITHUB_EVENT_PATH;
+        process.stdout.write(`GITHUB_EVENT_PATH ${path3} does not exist${import_os3.EOL}`);
       }
     }
     this.eventName = process.env.GITHUB_EVENT_NAME;
@@ -24634,6 +24634,9 @@ function titleTokens(title) {
   );
 }
 
+// src/fix-runner.ts
+var import_promises2 = require("node:fs/promises");
+
 // src/issue-context.ts
 function formatIssuePrompt(issue2, allowedLabels, mode, relatedItems) {
   return `You are triaging a GitHub issue for ${issue2.owner}/${issue2.repo}.
@@ -25026,6 +25029,86 @@ async function runValidation(inputs, env) {
   return `validation failed: ${formatCommandFailure(result)}`;
 }
 
+// src/signed-commit.ts
+var import_promises = require("node:fs/promises");
+var import_node_path2 = __toESM(require("node:path"));
+async function commitChangesWithGitHubSignature(octokit, options) {
+  const cwd = options.cwd ?? process.cwd();
+  const changes = await collectWorkingTreeChanges(cwd);
+  if (!changes.additions.length && !changes.deletions.length) {
+    throw new Error("No tracked file changes to commit.");
+  }
+  const { owner, repo } = context2.repo;
+  if (options.createBranch) {
+    await octokit.rest.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${options.branch}`,
+      sha: options.expectedHeadOid
+    });
+  }
+  const response = await octokit.graphql(
+    `mutation CreateSignedCommit($input: CreateCommitOnBranchInput!) {
+      createCommitOnBranch(input: $input) {
+        commit {
+          oid
+          url
+        }
+      }
+    }`,
+    {
+      input: {
+        branch: {
+          repositoryNameWithOwner: `${owner}/${repo}`,
+          branchName: options.branch
+        },
+        expectedHeadOid: options.expectedHeadOid,
+        message: {
+          headline: options.message
+        },
+        fileChanges: changes
+      }
+    }
+  );
+  return response.createCommitOnBranch.commit;
+}
+async function collectWorkingTreeChanges(cwd) {
+  const status = await git(["diff", "--name-status", "-z"], cwd);
+  const entries = parseNameStatus(status);
+  const additions = [];
+  const deletions = [];
+  for (const entry of entries) {
+    if (entry.deletePath) deletions.push({ path: entry.deletePath });
+    if (entry.addPath) {
+      const contents = await (0, import_promises.readFile)(import_node_path2.default.join(cwd, entry.addPath));
+      additions.push({ path: entry.addPath, contents: contents.toString("base64") });
+    }
+  }
+  return { additions, deletions };
+}
+function parseNameStatus(output) {
+  const parts = output.split("\0").filter(Boolean);
+  const entries = [];
+  for (let index = 0; index < parts.length; ) {
+    const status = parts[index++];
+    if (!status) break;
+    const code = status[0];
+    if (code === "R" || code === "C") {
+      const oldPath = parts[index++];
+      const newPath = parts[index++];
+      if (!oldPath || !newPath) break;
+      if (code === "R") entries.push({ deletePath: oldPath, addPath: newPath });
+      else entries.push({ addPath: newPath });
+      continue;
+    }
+    const changedPath = parts[index++];
+    if (!changedPath) break;
+    if (code === "D") entries.push({ deletePath: changedPath });
+    else entries.push({ addPath: changedPath });
+  }
+  return entries;
+}
+
 // src/fix-runner.ts
 async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
   if (!shouldAttemptFix(triage, inputs)) return void 0;
@@ -25044,21 +25127,27 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
     return existingPr?.url;
   }
   try {
+    let expectedHeadOid;
     if (existingPr || existingRemoteBranch) {
       info(existingPr ? `Reusing existing draft PR branch ${branch}: ${existingPr.url}` : `Reusing existing remote branch ${branch}.`);
       await checkoutExistingBranch(branch);
+      expectedHeadOid = await git(["rev-parse", `origin/${branch}`]);
     } else {
       await git(["checkout", "-B", branch]);
+      expectedHeadOid = await git(["rev-parse", "HEAD"]);
     }
+    const pullRequestTemplate = await readPullRequestTemplate();
     const repair = await runIssueRepair(issue2, triage, inputs);
     if (!repair) {
       return void 0;
     }
-    await git(["config", "user.name", "posthog-watcher-action"]);
-    await git(["config", "user.email", "posthog-watcher-action@users.noreply.github.com"]);
-    await git(["add", "--", ...repair.files]);
-    await git(["commit", "-m", `Fix #${issue2.number}: ${issue2.title.slice(0, 80)}`]);
-    await git(["push", "--set-upstream", "origin", branch]);
+    const commit = await commitChangesWithGitHubSignature(octokit, {
+      branch,
+      message: `Fix #${issue2.number}: ${issue2.title.slice(0, 80)}`,
+      expectedHeadOid,
+      createBranch: !existingPr && !existingRemoteBranch
+    });
+    info(`Created GitHub-signed commit: ${commit.url}`);
     if (existingPr) {
       info(`Updated existing draft PR: ${existingPr.url}`);
       return existingPr.url;
@@ -25067,7 +25156,7 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
       title: `Fix #${issue2.number}: ${issue2.title}`,
       head: branch,
       base,
-      body: buildPullRequestBody(issue2, triage, repair.files, inputs.validationCommand)
+      body: buildPullRequestBody(issue2, triage, repair.files, inputs.validationCommand, pullRequestTemplate)
     });
     info(`Created draft PR: ${prUrl}`);
     return prUrl;
@@ -25098,8 +25187,19 @@ function shouldAttemptFix(triage, inputs) {
   if (triage.fix.risk !== "low") return false;
   return true;
 }
-function buildPullRequestBody(issue2, triage, files, validationCommand) {
-  return `Fixes #${issue2.number}
+async function readPullRequestTemplate() {
+  try {
+    return await (0, import_promises2.readFile)(".github/pull_request_template.md", "utf8");
+  } catch (error2) {
+    if (isNotFoundError(error2)) return void 0;
+    throw error2;
+  }
+}
+function isNotFoundError(error2) {
+  return typeof error2 === "object" && error2 !== null && "code" in error2 && error2.code === "ENOENT";
+}
+function buildPullRequestBody(issue2, triage, files, validationCommand, template) {
+  const watcherBody = `Fixes #${issue2.number}
 
 Generated by posthog-watcher-action using pi.
 
@@ -25119,6 +25219,11 @@ ${files.map((file) => `- \`${file}\``).join("\n")}
 
 ${validationCommand ? `- \`${validationCommand}\`` : "- No validation command configured."}
 `;
+  return template ? `${template.trimEnd()}
+
+---
+
+${watcherBody}` : watcherBody;
 }
 
 // src/inputs.ts
@@ -25255,7 +25360,7 @@ async function enqueueCurrentPayload(octokit, inputs, command) {
 async function readQueue(octokit, inputs) {
   const { owner, repo } = stateRepository(inputs);
   await ensureBranch(octokit, owner, repo, inputs.stateBranch);
-  return parseQueue(await readFile(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH));
+  return parseQueue(await readFile3(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH));
 }
 async function incrementQueueAttempt(octokit, inputs, id) {
   return mutateQueue(octokit, inputs, (queue) => {
@@ -25378,12 +25483,12 @@ async function ensureBranch(octokit, owner, repo, branch) {
     });
   }
 }
-async function readFile(octokit, owner, repo, branch, path2) {
-  return (await readFileWithSha(octokit, owner, repo, branch, path2))?.content;
+async function readFile3(octokit, owner, repo, branch, path3) {
+  return (await readFileWithSha(octokit, owner, repo, branch, path3))?.content;
 }
-async function readFileWithSha(octokit, owner, repo, branch, path2) {
+async function readFileWithSha(octokit, owner, repo, branch, path3) {
   try {
-    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path2, ref: branch });
+    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path3, ref: branch });
     if (!Array.isArray(existing.data) && existing.data.type === "file" && "content" in existing.data) {
       return { content: Buffer.from(existing.data.content, "base64").toString("utf8"), sha: existing.data.sha };
     }
@@ -25392,11 +25497,11 @@ async function readFileWithSha(octokit, owner, repo, branch, path2) {
   }
   return void 0;
 }
-async function upsertFile(octokit, owner, repo, branch, path2, content, message, sha) {
+async function upsertFile(octokit, owner, repo, branch, path3, content, message, sha) {
   await octokit.rest.repos.createOrUpdateFileContents({
     owner,
     repo,
-    path: path2,
+    path: path3,
     branch,
     message,
     content: Buffer.from(content).toString("base64"),
@@ -25485,6 +25590,7 @@ async function repairPullRequest(octokit, pullNumber, inputs, command) {
   }
   await git(["fetch", "origin", `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
   await git(["checkout", "-B", branch, `origin/${branch}`]);
+  const expectedHeadOid = await git(["rev-parse", `origin/${branch}`]);
   const prompt = `Repair pull request #${pullNumber}: ${pr.title}
 
 This is PR repair/adoption. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
@@ -25507,11 +25613,13 @@ ${pr.body ?? "(empty)"}
     info(`[dry-run] Would push PR branch ${branch}.`);
     return { conclusion: "dry-run PR repair completed", prUrl: pr.html_url, repaired: true };
   }
-  await git(["config", "user.name", "posthog-watcher-action"]);
-  await git(["config", "user.email", "posthog-watcher-action@users.noreply.github.com"]);
-  await git(["add", "--", ...repair.files]);
-  await git(["commit", "-m", `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`]);
-  await git(["push", "origin", branch]);
+  const commit = await commitChangesWithGitHubSignature(octokit, {
+    branch,
+    message: `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`,
+    expectedHeadOid,
+    createBranch: false
+  });
+  info(`Created GitHub-signed commit: ${commit.url}`);
   return { conclusion: "PR branch repaired", prUrl: pr.html_url, repaired: true };
 }
 
@@ -25641,9 +25749,9 @@ async function writeStateRecord(octokit, inputs, record) {
   if (!inputs.stateEnabled || inputs.dryRun) return;
   const { owner, repo } = stateRepository2(inputs);
   await ensureBranch2(octokit, owner, repo, inputs.stateBranch);
-  const path2 = `records/${record.owner}-${record.repo}/${record.kind}s/${record.numberOrSha}.md`;
+  const path3 = `records/${record.owner}-${record.repo}/${record.kind}s/${record.numberOrSha}.md`;
   const body = renderRecord(record, inputs);
-  await upsertFile2(octokit, owner, repo, inputs.stateBranch, path2, body, `Update watcher state for ${record.kind} ${record.numberOrSha}`);
+  await upsertFile2(octokit, owner, repo, inputs.stateBranch, path3, body, `Update watcher state for ${record.kind} ${record.numberOrSha}`);
   const index = await readIndex(octokit, owner, repo, inputs.stateBranch);
   const entry = toDashboardEntry(record);
   index[entry.key] = entry;
@@ -25677,7 +25785,7 @@ async function ensureBranch2(octokit, owner, repo, branch) {
   }
 }
 async function readIndex(octokit, owner, repo, branch) {
-  const content = await readFile2(octokit, owner, repo, branch, "index.json");
+  const content = await readFile4(octokit, owner, repo, branch, "index.json");
   if (!content) return {};
   try {
     return JSON.parse(content);
@@ -25685,9 +25793,9 @@ async function readIndex(octokit, owner, repo, branch) {
     return {};
   }
 }
-async function readFile2(octokit, owner, repo, branch, path2) {
+async function readFile4(octokit, owner, repo, branch, path3) {
   try {
-    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path2, ref: branch });
+    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path3, ref: branch });
     if (!Array.isArray(existing.data) && existing.data.type === "file" && "content" in existing.data) {
       return Buffer.from(existing.data.content, "base64").toString("utf8");
     }
@@ -25696,20 +25804,20 @@ async function readFile2(octokit, owner, repo, branch, path2) {
   }
   return void 0;
 }
-async function upsertFile2(octokit, owner, repo, branch, path2, content, message) {
+async function upsertFile2(octokit, owner, repo, branch, path3, content, message) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     let sha;
     try {
-      const existing = await octokit.rest.repos.getContent({ owner, repo, path: path2, ref: branch });
+      const existing = await octokit.rest.repos.getContent({ owner, repo, path: path3, ref: branch });
       if (!Array.isArray(existing.data) && existing.data.type === "file") sha = existing.data.sha;
     } catch (error2) {
-      debug(`State file ${path2} does not exist yet or branch is missing: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      debug(`State file ${path3} does not exist yet or branch is missing: ${error2 instanceof Error ? error2.message : String(error2)}`);
     }
     try {
       await octokit.rest.repos.createOrUpdateFileContents({
         owner,
         repo,
-        path: path2,
+        path: path3,
         branch,
         message,
         content: Buffer.from(content).toString("base64"),

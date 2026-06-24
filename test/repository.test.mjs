@@ -186,6 +186,30 @@ test('queue drain preserves FIFO and retry state', () => {
   assert.match(commandReplies, /questionOverride/);
 });
 
+test('fix PRs use host pull request template when present', () => {
+  const fixRunner = read('src/fix-runner.ts');
+  const readme = read('README.md');
+  assert.match(fixRunner, /\.github\/pull_request_template\.md/);
+  assert.match(fixRunner, /readPullRequestTemplate/);
+  assert.match(fixRunner, /template\.trimEnd\(\)/);
+  assert.match(readme, /Uses `\.github\/pull_request_template\.md`/);
+});
+
+test('fix and PR repair commits are GitHub-signed', () => {
+  const fixRunner = read('src/fix-runner.ts');
+  const prRepair = read('src/pr-repair-runner.ts');
+  const signedCommit = read('src/signed-commit.ts');
+  const readme = read('README.md');
+  assert.match(fixRunner, /commitChangesWithGitHubSignature/);
+  assert.match(prRepair, /commitChangesWithGitHubSignature/);
+  assert.match(signedCommit, /createCommitOnBranch/);
+  assert.match(signedCommit, /createRef/);
+  assert.doesNotMatch(fixRunner, /git\(\['commit'/);
+  assert.doesNotMatch(prRepair, /git\(\['commit'/);
+  assert.match(readme, /planetscale\/ghcommit-action/);
+  assert.match(readme, /Verified commits/);
+});
+
 test('reproduction-first repair is opt-in and wrapper-owned', () => {
   const action = read('action.yml');
   const inputs = read('src/inputs.ts');
