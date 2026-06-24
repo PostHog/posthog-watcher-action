@@ -349,7 +349,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `queued-mode` | `auto` | Default processing mode stored by `enqueue` when no trusted watcher command is present: `auto`, `triage`, `investigate`, or `fix`. |
 | `max-queue-items` | `5` | Maximum queued items to drain sequentially in one `drain-queue` run. |
 | `max-queue-attempts` | `3` | Maximum failed drain attempts before dropping a queued item. |
-| `max-pi-calls` | `4` | Maximum pi calls allowed for one action run. |
+| `max-pi-calls` | `16` | Maximum pi calls allowed for one action run. |
 | `pi-timeout-ms` | `600000` | Timeout for each pi subprocess. |
 | `approve-project-resources` | `false` | Pass `--approve` to pi so host repository `AGENTS.md`, `.pi`, and `.agents` resources can be trusted in CI. Enable only for trusted repositories. |
 | `state-enabled` | `false` | Write durable markdown state records and dashboard. |

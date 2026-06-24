@@ -192,7 +192,9 @@ test('repository labels can be used dynamically with descriptions', () => {
   const index = read('src/index.ts');
   const issueContext = read('src/issue-context.ts');
   const readme = read('README.md');
+  const inputs = read('src/inputs.ts');
   assert.match(action, /default: '\*'/);
+  assert.match(inputs, /core\.getInput\('labels'\) \|\| '\*'/);
   assert.match(githubSource, /description: label\.description/);
   assert.match(index, /allowedRepositoryLabels/);
   assert.match(index, /allowlist\.includes\('\*'\)/);

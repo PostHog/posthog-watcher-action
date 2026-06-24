@@ -122,7 +122,7 @@ inputs:
   max-pi-calls:
     description: Maximum pi calls allowed for this action run
     required: false
-    default: '4'
+    default: '16'
   pi-timeout-ms:
     description: Timeout in milliseconds for each pi subprocess
     required: false
