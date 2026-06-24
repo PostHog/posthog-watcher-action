@@ -242,7 +242,7 @@ concurrency:
 
 ## Dedicated queue worker
 
-For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or `openai-api-key`. Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`.
+For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or `openai-api-key`. Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Pull request review comments and commented/changes-requested reviews are treated as `@posthog-watcher address review` for same-repo watcher PRs.
 
 Event enqueue workflow:
 
@@ -256,6 +256,10 @@ on:
     types: [created]
   pull_request:
     types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
 
 permissions:
   contents: write # write queue.json to state branch

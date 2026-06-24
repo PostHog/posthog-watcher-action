@@ -37,6 +37,16 @@ test('maintainer issue comment commands are documented', () => {
   assert.match(readme, /@posthog-watcher fix/);
 });
 
+test('pull request review comments trigger watcher PR repair', () => {
+  const commands = read('src/commands.ts');
+  const readme = read('README.md');
+  assert.match(commands, /pull_request_review_comment/);
+  assert.match(commands, /pull_request_review/);
+  assert.match(commands, /commandToResolution\('address-review'\)/);
+  assert.match(readme, /pull_request_review_comment/);
+  assert.match(readme, /address review/);
+});
+
 test('fix PRs use stable per-issue branches for reuse', () => {
   const source = read('src/fix-runner.ts');
   assert.match(source, /posthog-watcher\/issue-\$\{issue\.number\}/);

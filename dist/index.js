@@ -24337,6 +24337,18 @@ function getCommentBody() {
 // src/commands.ts
 var TRUSTED_ASSOCIATIONS = /* @__PURE__ */ new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 function resolveCommand() {
+  if (context2.eventName === "pull_request_review_comment") {
+    info("Treating pull request review comment as @posthog-watcher address review.");
+    return commandToResolution("address-review");
+  }
+  if (context2.eventName === "pull_request_review") {
+    const payload2 = context2.payload;
+    if (payload2.review?.state === "commented" || payload2.review?.state === "changes_requested") {
+      info(`Treating pull request review ${payload2.review.state} event as @posthog-watcher address review.`);
+      return commandToResolution("address-review");
+    }
+    return { shouldRun: false, reason: `pull request review state does not require repair: ${payload2.review?.state ?? "unknown"}` };
+  }
   if (context2.eventName !== "issue_comment") {
     return { shouldRun: true };
   }

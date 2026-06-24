@@ -28,6 +28,20 @@ export interface CommandResolution {
 const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 export function resolveCommand(): CommandResolution {
+  if (github.context.eventName === 'pull_request_review_comment') {
+    core.info('Treating pull request review comment as @posthog-watcher address review.');
+    return commandToResolution('address-review');
+  }
+
+  if (github.context.eventName === 'pull_request_review') {
+    const payload = github.context.payload as { review?: { state?: string } };
+    if (payload.review?.state === 'commented' || payload.review?.state === 'changes_requested') {
+      core.info(`Treating pull request review ${payload.review.state} event as @posthog-watcher address review.`);
+      return commandToResolution('address-review');
+    }
+    return { shouldRun: false, reason: `pull request review state does not require repair: ${payload.review?.state ?? 'unknown'}` };
+  }
+
   if (github.context.eventName !== 'issue_comment') {
     return { shouldRun: true };
   }
