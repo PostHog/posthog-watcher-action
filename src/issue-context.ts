@@ -132,6 +132,7 @@ Requirements:
 - If the previous diff was a no-op/refactor, replace it with a behavior-changing fix for the issue or remove it.
 - Preserve any reproduction/regression check from earlier attempts and keep it passing after the fix.
 - If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values.
+- Read root RELEASING.md if present and follow its instructions for adding or preserving the required changeset/changelog entry.
 - Preserve the original minimal issue fix intent.
 - If the failure cannot be repaired safely, stop without broad changes and explain why.
 `;

@@ -1,7 +1,12 @@
+import * as core from '@actions/core';
 import * as github from '@actions/github';
 import type { IssueSnapshot } from './issue-context.js';
 
 export type Octokit = ReturnType<typeof github.getOctokit>;
+
+const CLIENT_LIBRARIES_REVIEW_TEAM = 'PostHog/team-client-libraries';
+const CLIENT_LIBRARIES_REVIEW_TEAM_ORG = 'PostHog';
+const CLIENT_LIBRARIES_REVIEW_TEAM_SLUG = 'team-client-libraries';
 
 export interface RepositoryLabel {
   name: string;
@@ -142,7 +147,7 @@ export async function createDraftPullRequest(octokit: Octokit, params: {
   head: string;
   base: string;
   body: string;
-}): Promise<string> {
+}): Promise<{ number: number; url: string }> {
   const { owner, repo } = github.context.repo;
   const created = await octokit.rest.pulls.create({
     owner,
@@ -153,7 +158,30 @@ export async function createDraftPullRequest(octokit: Octokit, params: {
     body: params.body,
     draft: true,
   });
-  return created.data.html_url;
+  return { number: created.data.number, url: created.data.html_url };
+}
+
+export async function ensureClientLibrariesReviewRequested(octokit: Octokit, pullNumber: number): Promise<void> {
+  const { owner, repo } = github.context.repo;
+  if (owner.toLowerCase() !== CLIENT_LIBRARIES_REVIEW_TEAM_ORG.toLowerCase()) {
+    core.warning(`Skipping ${CLIENT_LIBRARIES_REVIEW_TEAM} review request for ${owner}/${repo}#${pullNumber}; repository is not in the ${CLIENT_LIBRARIES_REVIEW_TEAM_ORG} org.`);
+    return;
+  }
+
+  const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+  const requestedTeams = (pull.data.requested_teams ?? []) as Array<{ slug?: string | null }>;
+  if (requestedTeams.some((team) => team.slug?.toLowerCase() === CLIENT_LIBRARIES_REVIEW_TEAM_SLUG)) {
+    core.info(`${CLIENT_LIBRARIES_REVIEW_TEAM} is already requested on PR #${pullNumber}.`);
+    return;
+  }
+
+  await octokit.rest.pulls.requestReviewers({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    team_reviewers: [CLIENT_LIBRARIES_REVIEW_TEAM_SLUG],
+  });
+  core.info(`Requested review from ${CLIENT_LIBRARIES_REVIEW_TEAM} on PR #${pullNumber}.`);
 }
 
 export function defaultBranch(): string {

@@ -283,7 +283,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     await addLabels(octokit, issue.number, allLabels);
   }
 
-  const fixBlocker = (await findPreExistingFixBlocker(octokit, issue, relatedItems, triage, duplicate)) ?? fixCommandBlocker(inputs, command);
+  const fixBlocker = (await findPreExistingFixBlocker(octokit, issue, relatedItems, triage, duplicate)) ?? fixCommandBlocker(inputs, command) ?? featureFixBlocker(triage, inputs, command);
   if (fixBlocker) core.info(`Skipping fix PR: ${fixBlocker}`);
   const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs);
   let closed = false;
@@ -331,9 +331,16 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
 
 function fixCommandBlocker(inputs: ActionInputs, command: CommandResolution): string | undefined {
   if (!inputs.requireFixCommand) return undefined;
-  return command.command === 'fix' || command.command === 'fix-ci' || command.command === 'address-review' || command.command === 'rebase'
-    ? undefined
-    : 'require-fix-command is enabled and no trusted fix command was provided';
+  return fixExplicitlyRequested(inputs, command) ? undefined : 'require-fix-command is enabled and no trusted fix command was provided';
+}
+
+function featureFixBlocker(triage: TriageResult, inputs: ActionInputs, command: CommandResolution): string | undefined {
+  if (triage.issueType !== 'feature') return undefined;
+  return fixExplicitlyRequested(inputs, command) ? undefined : 'feature requests require an explicit trusted fix command or mode: fix before opening a draft PR';
+}
+
+function fixExplicitlyRequested(inputs: ActionInputs, command: CommandResolution): boolean {
+  return inputs.mode === 'fix' || command.command === 'fix' || command.command === 'fix-ci' || command.command === 'address-review' || command.command === 'rebase';
 }
 
 async function maybeTriggerDrainWorkflow(octokit: Octokit, inputs: ActionInputs): Promise<void> {
