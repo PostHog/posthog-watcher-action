@@ -15,10 +15,11 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Synchronizes labels with the `posthog-watcher:` managed prefix without touching human labels.
 - Creates or updates one marker-backed issue comment.
 - Looks up a capped set of related same-repo issues/PRs, including explicit refs and closing PR candidates.
-- Skips fix PR creation when a related open PR or older related issue already appears to address the same report, or when triage proposes a duplicate/already-fixed canonical item.
+- Skips fix PR creation when a related open PR or older related issue already appears to address the same report, when triage proposes a duplicate/already-fixed canonical item, or when a feature request was not explicitly sent through fix mode.
 - Can propose closes in comments and optionally close issues only with an explicit trusted command plus `allow-close: true`.
 - Runs a bounded repair loop and independent read-only review gate before committing generated fix diffs.
 - Creates watcher commits through GitHub's commit API, like `planetscale/ghcommit-action`, so commits are signed by GitHub's GPG key and show as Verified.
+- Requests review from `PostHog/team-client-libraries` on generated fix PRs when it is not already requested.
 - Uses `.github/pull_request_template.md` as the base draft PR body when the host repository provides one, then appends watcher details.
 - Can enforce reproduction-first issue fixes with a wrapper-owned command that must fail before the fix and pass after it.
 - Supports PR repair for PRs created by this action; commands/review events on other PRs are ignored.

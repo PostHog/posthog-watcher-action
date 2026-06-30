@@ -232,6 +232,25 @@ test('repository labels can be used dynamically with descriptions', () => {
   assert.match(readme, /Label descriptions are included/);
 });
 
+test('fix PRs request client libraries team review when needed', () => {
+  const fixRunner = read('src/fix-runner.ts');
+  const github = read('src/github.ts');
+  const readme = read('README.md');
+  assert.match(fixRunner, /ensureClientLibrariesReviewRequested/);
+  assert.match(github, /PostHog\/team-client-libraries/);
+  assert.match(github, /requested_teams/);
+  assert.match(github, /team_reviewers: \[CLIENT_LIBRARIES_REVIEW_TEAM_SLUG\]/);
+  assert.match(readme, /PostHog\/team-client-libraries/);
+});
+
+test('feature requests require explicit fix intent before draft PRs', () => {
+  const index = read('src/index.ts');
+  assert.match(index, /featureFixBlocker/);
+  assert.match(index, /triage\.issueType !== 'feature'/);
+  assert.match(index, /feature requests require an explicit trusted fix command or mode: fix/);
+  assert.match(index, /fixExplicitlyRequested/);
+});
+
 test('fix PRs use host pull request template when present', () => {
   const fixRunner = read('src/fix-runner.ts');
   const readme = read('README.md');

@@ -23892,6 +23892,9 @@ function getOctokit(token, options, ...additionalPlugins) {
 }
 
 // src/github.ts
+var CLIENT_LIBRARIES_REVIEW_TEAM = "PostHog/team-client-libraries";
+var CLIENT_LIBRARIES_REVIEW_TEAM_ORG = "PostHog";
+var CLIENT_LIBRARIES_REVIEW_TEAM_SLUG = "team-client-libraries";
 function resolveIssueNumber(inputIssueNumber) {
   if (inputIssueNumber) return inputIssueNumber;
   const payload = context2.payload;
@@ -24014,7 +24017,27 @@ async function createDraftPullRequest(octokit, params) {
     body: params.body,
     draft: true
   });
-  return created.data.html_url;
+  return { number: created.data.number, url: created.data.html_url };
+}
+async function ensureClientLibrariesReviewRequested(octokit, pullNumber) {
+  const { owner, repo } = context2.repo;
+  if (owner.toLowerCase() !== CLIENT_LIBRARIES_REVIEW_TEAM_ORG.toLowerCase()) {
+    warning(`Skipping ${CLIENT_LIBRARIES_REVIEW_TEAM} review request for ${owner}/${repo}#${pullNumber}; repository is not in the ${CLIENT_LIBRARIES_REVIEW_TEAM_ORG} org.`);
+    return;
+  }
+  const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+  const requestedTeams = pull.data.requested_teams ?? [];
+  if (requestedTeams.some((team) => team.slug?.toLowerCase() === CLIENT_LIBRARIES_REVIEW_TEAM_SLUG)) {
+    info(`${CLIENT_LIBRARIES_REVIEW_TEAM} is already requested on PR #${pullNumber}.`);
+    return;
+  }
+  await octokit.rest.pulls.requestReviewers({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    team_reviewers: [CLIENT_LIBRARIES_REVIEW_TEAM_SLUG]
+  });
+  info(`Requested review from ${CLIENT_LIBRARIES_REVIEW_TEAM} on PR #${pullNumber}.`);
 }
 function defaultBranch() {
   const payload = context2.payload;
@@ -24790,6 +24813,7 @@ Requirements:
 - If the previous diff was a no-op/refactor, replace it with a behavior-changing fix for the issue or remove it.
 - Preserve any reproduction/regression check from earlier attempts and keep it passing after the fix.
 - If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values.
+- Read root RELEASING.md if present and follow its instructions for adding or preserving the required changeset/changelog entry.
 - Preserve the original minimal issue fix intent.
 - If the failure cannot be repaired safely, stop without broad changes and explain why.
 `;
@@ -25197,17 +25221,19 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs) {
     });
     info(`Created GitHub-signed commit: ${commit.url}`);
     if (existingPr) {
+      await ensureClientLibrariesReviewRequested(octokit, existingPr.number);
       info(`Updated existing draft PR: ${existingPr.url}`);
       return existingPr.url;
     }
-    const prUrl = await createDraftPullRequest(octokit, {
+    const pr = await createDraftPullRequest(octokit, {
       title: `fix: ${issue2.title}`,
       head: branch,
       base,
       body: buildPullRequestBody(issue2, triage, repair.files, inputs.validationCommand, pullRequestTemplate)
     });
-    info(`Created draft PR: ${prUrl}`);
-    return prUrl;
+    await ensureClientLibrariesReviewRequested(octokit, pr.number);
+    info(`Created draft PR: ${pr.url}`);
+    return pr.url;
   } finally {
     await restoreCheckout(originalRef);
   }
@@ -26231,7 +26257,7 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
     for (const label of staleLabels) await removeLabel(octokit, issue2.number, label);
     await addLabels(octokit, issue2.number, allLabels);
   }
-  const fixBlocker = await findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, duplicate) ?? fixCommandBlocker(inputs, command);
+  const fixBlocker = await findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, duplicate) ?? fixCommandBlocker(inputs, command) ?? featureFixBlocker(triage, inputs, command);
   if (fixBlocker) info(`Skipping fix PR: ${fixBlocker}`);
   const prUrl = security.sensitive || fixBlocker ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs);
   let closed = false;
@@ -26276,7 +26302,14 @@ ${commentBody}`);
 }
 function fixCommandBlocker(inputs, command) {
   if (!inputs.requireFixCommand) return void 0;
-  return command.command === "fix" || command.command === "fix-ci" || command.command === "address-review" || command.command === "rebase" ? void 0 : "require-fix-command is enabled and no trusted fix command was provided";
+  return fixExplicitlyRequested(inputs, command) ? void 0 : "require-fix-command is enabled and no trusted fix command was provided";
+}
+function featureFixBlocker(triage, inputs, command) {
+  if (triage.issueType !== "feature") return void 0;
+  return fixExplicitlyRequested(inputs, command) ? void 0 : "feature requests require an explicit trusted fix command or mode: fix before opening a draft PR";
+}
+function fixExplicitlyRequested(inputs, command) {
+  return inputs.mode === "fix" || command.command === "fix" || command.command === "fix-ci" || command.command === "address-review" || command.command === "rebase";
 }
 async function maybeTriggerDrainWorkflow(octokit, inputs) {
   if (!inputs.triggerDrainWorkflow) return;
