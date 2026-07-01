@@ -88,13 +88,16 @@ test('pre-existing related fixes block duplicate fix PRs', () => {
   assert.match(readme, /related open PR contains closing syntax/);
 });
 
-test('security policy uses word-boundary matching for short terms', () => {
+test('security policy uses word-boundary matching and credential evidence', () => {
   const source = read('src/security.ts');
   const index = read('src/index.ts');
   const readme = read('README.md');
   const guardrails = read('src/guardrails.ts');
   const redact = read('src/redact.ts');
-  assert.match(source, /SECURITY_PATTERNS/);
+  assert.match(source, /SECURITY_REPORT_PATTERNS/);
+  assert.match(source, /CREDENTIAL_VALUE_PATTERNS/);
+  assert.match(source, /looksLikeCredentialValue/);
+  assert.match(source, /isWatcherGeneratedComment/);
   assert.match(source, /\\\\b/);
   assert.doesNotMatch(source, /haystack\.includes/);
   assert.match(index, /allowSecurityAi/);

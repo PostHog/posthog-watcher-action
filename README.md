@@ -210,7 +210,7 @@ The action never closes pull requests in this MVP.
 
 ## Security policy
 
-Issues containing security-sensitive labels or text such as `security`, `vulnerability`, `xss`, `csrf`, `rce`, `secret`, `credential`, or auth bypass terms are treated as security-sensitive. By default, those reports are **not sent to pi/OpenAI**. The action skips fix PRs and close/apply actions and adds the managed security-review label when that label exists. Set `allow-security-ai: 'true'` only if the host repository explicitly allows third-party AI processing for suspected security reports.
+Issues containing security-sensitive labels or text such as `security`, `vulnerability`, `xss`, `csrf`, `rce`, or auth bypass terms are treated as security-sensitive. Credential words such as `token`, `secret`, or `credential` only trigger the security path when accompanied by real-looking credential evidence (for example a known token prefix, a bearer token value, an assignment, or a private-key block), so placeholder snippets such as `postHog.init(token, ...)` can still be triaged. By default, sensitive reports are **not sent to pi/OpenAI**. The action skips fix PRs and close/apply actions and adds the managed security-review label when that label exists. Set `allow-security-ai: 'true'` only if the host repository explicitly allows third-party AI processing for suspected security reports.
 
 ## Managed labels
 

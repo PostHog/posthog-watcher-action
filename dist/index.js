@@ -24264,24 +24264,67 @@ function collectMessageErrors(message, errors) {
 }
 
 // src/security.ts
-var SECURITY_PATTERNS = [
+var SECURITY_REPORT_PATTERNS = [
   term("security"),
   term("vulnerability"),
   term("xss"),
   term("csrf"),
   term("rce"),
-  term("token"),
-  term("secret"),
-  term("credential"),
   phrase("auth bypass"),
   phrase("authentication bypass"),
   phrase("authorization bypass"),
   phrase("sql injection")
 ];
+var KNOWN_SECRET_PATTERNS = [
+  { reason: "token", pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/i },
+  { reason: "token", pattern: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/i },
+  { reason: "token", pattern: /\bghs_[A-Za-z0-9_]{20,}\b/i },
+  { reason: "token", pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/i },
+  { reason: "private key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/i }
+];
+var CREDENTIAL_VALUE_PATTERNS = [
+  { reason: "token", pattern: /\b(?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|token)\b\s*(?:[:=]|=>)\s*["'`]?([^\s"'`,;\])}]+)/i },
+  { reason: "token", pattern: /\bauthorization\s*:\s*bearer\s+([^\s"'`,;\])}]+)/i },
+  { reason: "credential", pattern: /\b(?:api[_ -]?key|client[_ -]?secret|secret|credential|password)\b\s*(?:[:=]|=>)\s*["'`]?([^\s"'`,;\])}]+)/i }
+];
 function assessIssueSecurity(issue2) {
-  const haystack = [issue2.title, issue2.body, ...issue2.labels, ...issue2.comments.map((comment) => comment.body)].join("\n").toLowerCase();
-  const reasons = SECURITY_PATTERNS.filter(({ pattern }) => pattern.test(haystack)).map(({ reason }) => reason);
-  return { sensitive: reasons.length > 0, reasons };
+  const labelHaystack = issue2.labels.join("\n");
+  const textHaystack = [issue2.title, issue2.body, ...issue2.comments.filter((comment) => !isWatcherGeneratedComment(comment)).map((comment) => comment.body)].join("\n");
+  const reasons = /* @__PURE__ */ new Set();
+  for (const { reason, pattern } of SECURITY_REPORT_PATTERNS) {
+    if (pattern.test(labelHaystack) || pattern.test(textHaystack)) reasons.add(reason);
+  }
+  for (const reason of credentialEvidenceReasons([labelHaystack, textHaystack].join("\n"))) {
+    reasons.add(reason);
+  }
+  return { sensitive: reasons.size > 0, reasons: [...reasons] };
+}
+function credentialEvidenceReasons(value) {
+  const reasons = /* @__PURE__ */ new Set();
+  for (const { reason, pattern } of KNOWN_SECRET_PATTERNS) {
+    if (pattern.test(value)) reasons.add(reason);
+  }
+  for (const line of value.split(/\r?\n/)) {
+    for (const { reason, pattern } of CREDENTIAL_VALUE_PATTERNS) {
+      const match = pattern.exec(line);
+      if (match?.[1] && looksLikeCredentialValue(match[1])) reasons.add(reason);
+    }
+  }
+  return [...reasons];
+}
+function looksLikeCredentialValue(value) {
+  const normalized = value.trim().replace(/^["'`<({\[]+/, "").replace(/["'`>)}\],.;]+$/, "");
+  if (normalized.length < 16) return false;
+  if (/\s/.test(normalized)) return false;
+  if (/[<>{}$]/.test(normalized)) return false;
+  if (/^(?:token|secret|credential|password|api[_-]?key|bearer|redacted|placeholder|example|dummy|sample|test|your[-_]?token|x+|\.+)$/i.test(normalized)) return false;
+  if (/(?:^|[-_])(your|example|sample|dummy|placeholder|redacted|here)(?:$|[-_])/i.test(normalized)) return false;
+  if (/^[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL)[A-Z0-9_]*$/.test(normalized)) return false;
+  const characterClasses = [/[a-z]/, /[A-Z]/, /\d/, /[._~+/=-]/].filter((pattern) => pattern.test(normalized)).length;
+  return characterClasses >= 2;
+}
+function isWatcherGeneratedComment(comment) {
+  return comment.author.endsWith("[bot]") && comment.body.includes("posthog-watcher-action");
 }
 function term(value) {
   return { reason: value, pattern: new RegExp(`\\b${escapeRegExp(value)}\\b`, "i") };
