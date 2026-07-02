@@ -81,11 +81,14 @@ export async function repairPullRequest(octokit: Octokit, pullNumber: number, in
   if ((command === 'fix-ci' || command === 'address-review') && !failureContext.trim()) {
     return { conclusion: `skipped ${command} because no failing check or review context was found`, prUrl: pr.html_url, repaired: false };
   }
-  await git(['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
-  await git(['checkout', '-B', branch, `origin/${branch}`]);
-  const expectedHeadOid = await git(['rev-parse', `origin/${branch}`]);
+  const originalRef = await currentCheckoutRef();
 
-  const prompt = `Repair pull request #${pullNumber}: ${pr.title}
+  try {
+    await git(['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+    await git(['checkout', '-B', branch, `origin/${branch}`]);
+    const expectedHeadOid = await git(['rev-parse', `origin/${branch}`]);
+
+    const prompt = `Repair pull request #${pullNumber}: ${pr.title}
 
 This is PR repair for a posthog-watcher-action-created PR. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
 
@@ -99,23 +102,39 @@ PR body:
 ${pr.body ?? '(empty)'}
 \`\`\``;
 
-  const repair = await runPullRequestRepairSequence(prompt, inputs);
-  if (!repair.repaired) {
-    if (repair.warning) core.warning(repair.warning);
-    return { conclusion: repair.reason, prUrl: pr.html_url, repaired: false };
-  }
+    const repair = await runPullRequestRepairSequence(prompt, inputs, {
+      subject: `Pull request #${pullNumber}: ${pr.title}`,
+      failureContext,
+    });
+    if (!repair.repaired) {
+      if (repair.warning) core.warning(repair.warning);
+      return { conclusion: repair.reason, prUrl: pr.html_url, repaired: false };
+    }
 
-  if (inputs.dryRun) {
-    core.info(`[dry-run] Would push PR branch ${branch}.`);
-    return { conclusion: 'dry-run PR repair completed', prUrl: pr.html_url, repaired: true };
-  }
+    if (inputs.dryRun) {
+      core.info(`[dry-run] Would push PR branch ${branch}.`);
+      return { conclusion: 'dry-run PR repair completed', prUrl: pr.html_url, repaired: true };
+    }
 
-  const commit = await commitChangesWithGitHubSignature(octokit, {
-    branch,
-    message: `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`,
-    expectedHeadOid,
-    createBranch: false,
-  });
-  core.info(`Created GitHub-signed commit: ${commit.url}`);
-  return { conclusion: 'PR branch repaired', prUrl: pr.html_url, repaired: true };
+    const commit = await commitChangesWithGitHubSignature(octokit, {
+      branch,
+      message: `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`,
+      expectedHeadOid,
+      createBranch: false,
+    });
+    core.info(`Created GitHub-signed commit: ${commit.url}`);
+    return { conclusion: 'PR branch repaired', prUrl: pr.html_url, repaired: true };
+  } finally {
+    await restoreCheckout(originalRef);
+  }
+}
+
+async function currentCheckoutRef(): Promise<string> {
+  const branch = await git(['rev-parse', '--abbrev-ref', 'HEAD']);
+  return branch === 'HEAD' ? git(['rev-parse', 'HEAD']) : branch;
+}
+
+async function restoreCheckout(originalRef: string): Promise<void> {
+  await git(['reset', '--hard', 'HEAD']).catch((error) => core.warning(`Failed to reset worktree before restore: ${error instanceof Error ? error.message : String(error)}`));
+  await git(['checkout', originalRef]).catch((error) => core.warning(`Failed to restore original checkout ${originalRef}: ${error instanceof Error ? error.message : String(error)}`));
 }

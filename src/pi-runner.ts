@@ -18,7 +18,30 @@ export async function runPi(options: PiRunOptions): Promise<string> {
     throw new Error('The openai-codex/* provider is not supported by this GitHub Action because it only configures OPENAI_API_KEY. Use an OpenAI API model such as openai/gpt-5.5:high.');
   }
 
-  const callNumber = consumePiCall(options.inputs, options.requireText === false ? 'repair/review run' : 'triage run');
+  const attempts = options.inputs.piRetries + 1;
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const callNumber = consumePiCall(options.inputs, options.requireText === false ? 'repair/review run' : 'triage run');
+    core.info(`Running pi call ${callNumber}/${options.inputs.maxPiCalls} with model ${options.inputs.model} and tools ${options.tools.join(',')}${attempts > 1 ? ` (attempt ${attempt}/${attempts})` : ''}`);
+
+    try {
+      return await runPiOnce(options);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt >= attempts) break;
+      core.warning(`pi attempt ${attempt}/${attempts} failed; retrying without changing model: ${firstLine(lastError.message)}`);
+    }
+  }
+
+  throw lastError ?? new Error('pi failed');
+}
+
+function firstLine(value: string): string {
+  return value.split('\n')[0] ?? value;
+}
+
+async function runPiOnce(options: PiRunOptions): Promise<string> {
   const skillPath = path.join(path.resolve(__dirname, '..'), 'skills', 'karpathy-guidelines', 'SKILL.md');
   const args = [
     '--yes',
@@ -41,8 +64,6 @@ export async function runPi(options: PiRunOptions): Promise<string> {
     options.tools.join(','),
     options.prompt,
   ];
-
-  core.info(`Running pi call ${callNumber}/${options.inputs.maxPiCalls} with model ${options.inputs.model} and tools ${options.tools.join(',')}`);
 
   const env = sanitizedEnv(options.inputs.openaiApiKey);
   const result = await runCommandStatus('npx', args, { cwd: options.cwd ?? process.cwd(), env, timeoutMs: options.inputs.piTimeoutMs });

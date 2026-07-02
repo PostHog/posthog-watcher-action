@@ -42,6 +42,7 @@ export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult,
 
     const reproductionResult = await verifyReproductionAfterAttempt(reproduction, env);
     const validationFailure = reproductionResult.validationAlreadyRun ? undefined : await runValidation(inputs, env);
+    await exposeUntrackedFilesForDiff(env);
     const stats = parseNumstat(await env.git(['diff', '--numstat']));
     const guardrailFailures = checkDiffGuardrails(stats, {
       maxChangedFiles: inputs.maxChangedFiles,
@@ -50,7 +51,11 @@ export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult,
 
     const failures = [...(reproductionResult.failure ? [reproductionResult.failure] : []), ...(validationFailure ? [validationFailure] : []), ...guardrailFailures];
     if (!failures.length) {
-      const reviewGate = await reviewGeneratedDiff(inputs);
+      const reviewGate = await reviewGeneratedDiff(inputs, {
+        subject: `Issue #${issue.number}: ${issue.title}`,
+        summary: triage.summary,
+        intendedChange: triage.fix.suggestedApproach || triage.fix.reason,
+      });
       if (reviewGate.approve) {
         return { files: stats.files };
       }
@@ -66,13 +71,14 @@ export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult,
   return undefined;
 }
 
-export async function runPullRequestRepairSequence(prompt: string, inputs: ActionInputs): Promise<RepairSequenceResult> {
+export async function runPullRequestRepairSequence(prompt: string, inputs: ActionInputs, reviewContext?: { subject: string; failureContext?: string }): Promise<RepairSequenceResult> {
   const env = new CommandEnvironment();
   const agent = new PiAgent(inputs);
   await agent.runRepairPrompt(prompt);
 
   if (inputs.validationCommand) await env.expectShell(inputs.validationCommand, 'success');
 
+  await exposeUntrackedFilesForDiff(env);
   const stats = parseNumstat(await env.git(['diff', '--numstat']));
   if (!stats.files.length) {
     return { repaired: false, files: [], reason: 'skipped PR repair because no files changed' };
@@ -83,12 +89,21 @@ export async function runPullRequestRepairSequence(prompt: string, inputs: Actio
     return { repaired: false, files: stats.files, reason: 'skipped because guardrails failed', warning: `Skipping PR branch push because guardrails failed:\n- ${failures.join('\n- ')}` };
   }
 
-  const review = await reviewGeneratedDiff(inputs);
+  const review = await reviewGeneratedDiff(inputs, reviewContext);
   if (!review.approve) {
     return { repaired: false, files: stats.files, reason: 'skipped because review gate rejected diff', warning: `Skipping PR branch push because review gate rejected the diff: ${review.reason}` };
   }
 
   return { repaired: true, files: stats.files, reason: 'repair sequence approved' };
+}
+
+async function exposeUntrackedFilesForDiff(env: CommandEnvironment): Promise<string[]> {
+  const output = await env.git(['ls-files', '--others', '--exclude-standard', '-z']);
+  const files = output.split('\0').filter(Boolean);
+  for (let index = 0; index < files.length; index += 100) {
+    await env.git(['add', '-N', '--', ...files.slice(index, index + 100)]);
+  }
+  return files;
 }
 
 async function prepareReproduction(

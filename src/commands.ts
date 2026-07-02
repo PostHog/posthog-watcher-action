@@ -7,6 +7,7 @@ export type WatcherCommand =
   | 'investigate'
   | 'review'
   | 'fix'
+  | 'plan'
   | 'fix-ci'
   | 'address-review'
   | 'rebase'
@@ -82,6 +83,7 @@ export function parseWatcherCommand(body: string): WatcherCommand | undefined {
   if (/^fix\s+ci\b/.test(text)) return 'fix-ci';
   if (/^address\s+review\b/.test(text)) return 'address-review';
   if (/^rebase\b/.test(text)) return 'rebase';
+  if (/^(plan|propose\s+fix|propose-fix)\b/.test(text)) return 'plan';
   if (/^(fix|autofix)\b/.test(text)) return 'fix';
   if (/^status\b/.test(text)) return 'status';
   if (/^explain\b/.test(text)) return 'explain';
@@ -102,6 +104,7 @@ function commandToResolution(command: WatcherCommand): CommandResolution {
     case 'ask':
       return { shouldRun: true, command, mode: 'triage' };
     case 'investigate':
+    case 'plan':
       return { shouldRun: true, command, mode: 'investigate' };
     case 'fix':
     case 'fix-ci':

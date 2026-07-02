@@ -32,9 +32,14 @@ test('readme declares experimental PostHog SDK scope', () => {
 
 test('maintainer issue comment commands are documented', () => {
   const readme = read('README.md');
+  const commands = read('src/commands.ts');
   assert.match(readme, /@posthog-watcher triage/);
   assert.match(readme, /@posthog-watcher investigate/);
+  assert.match(readme, /@posthog-watcher plan/);
+  assert.match(readme, /@posthog-watcher propose-fix/);
   assert.match(readme, /@posthog-watcher fix/);
+  assert.match(commands, /propose-fix/);
+  assert.match(commands, /case 'plan'/);
 });
 
 test('pull request review comments trigger watcher PR repair', () => {
@@ -63,6 +68,11 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   assert.match(agent, /requireText: false/);
   assert.doesNotMatch(agent, /'bash'/);
   assert.match(repairRun, /independent review gate rejected the diff/);
+  assert.match(repairRun, /ls-files', '--others', '--exclude-standard', '-z'/);
+  assert.match(repairRun, /'add', '-N'/);
+  const reviewGate = read('src/review-gate.ts');
+  assert.match(reviewGate, /Review context/);
+  assert.match(reviewGate, /Intended change/);
 });
 
 test('pre-existing related fixes block duplicate fix PRs', () => {
@@ -138,10 +148,12 @@ test('advanced hardening features are wired', () => {
   const index = read('src/index.ts');
   assert.match(inputs, /maxPiCalls/);
   assert.match(inputs, /piTimeoutMs/);
+  assert.match(inputs, /piRetries/);
   assert.match(inputs, /queuedMode/);
   assert.match(inputs, /maxQueueItems/);
   assert.match(inputs, /maxQueueAttempts/);
   assert.match(piRunner, /consumePiCall/);
+  assert.match(piRunner, /retrying without changing model/);
   assert.match(piRunner, /--approve/);
   assert.doesNotMatch(piRunner, /--api-key/);
   assert.match(piRunner, /OPENAI_API_KEY/);
@@ -156,9 +168,12 @@ test('advanced hardening features are wired', () => {
   assert.match(state, /isConflictLike/);
   assert.match(prRepair, /not created by posthog-watcher-action/);
   assert.match(prRepair, /getPullRequestFailureContext/);
+  assert.match(prRepair, /restoreCheckout/);
   assert.match(commands, /PostHog Watcher \$\{command\}/);
   assert.match(snapshot, /posthog-watcher-snapshot/);
-  assert.match(index, /skipped unchanged issue during sweep/);
+  assert.match(snapshot, /watcherConfig/);
+  assert.match(index, /shouldSkipUnchangedIssue/);
+  assert.match(index, /skipped unchanged issue/);
 });
 
 test('dedicated queue modes are wired without requiring OpenAI for enqueue', () => {
@@ -260,6 +275,33 @@ test('sweep comments can mention the configured fix PR review team', () => {
   assert.match(index, /inputs\.fixPrReviewTeam/);
   assert.match(comment, /please review this sweep triage/);
   assert.match(readme, /new sweep triage\/security comments mention that team/);
+});
+
+test('state memory and progressive status comments are wired', () => {
+  const readme = read('README.md');
+  const state = read('src/state.ts');
+  const issueContext = read('src/issue-context.ts');
+  const comment = read('src/comment.ts');
+  const index = read('src/index.ts');
+  assert.match(readme, /repo memory/);
+  assert.match(readme, /phase\/status updates/);
+  assert.match(readme, /repo-memory-enabled/);
+  assert.match(readme, /progress-comments/);
+  const inputs = read('src/inputs.ts');
+  const action = read('action.yml');
+  assert.match(inputs, /repoMemoryEnabled/);
+  assert.match(inputs, /progressComments/);
+  assert.match(action, /repo-memory-enabled/);
+  assert.match(action, /progress-comments/);
+  assert.match(state, /readRepoMemory/);
+  assert.match(state, /appendRepoMemory/);
+  assert.match(state, /memory\//);
+  assert.match(issueContext, /Repository memory from prior watcher runs/);
+  assert.match(comment, /buildStatusComment/);
+  assert.match(index, /updateIssueStatus/);
+  assert.match(index, /inputs\.progressComments/);
+  assert.match(index, /inputs\.repoMemoryEnabled/);
+  assert.match(index, /appendRepoMemory/);
 });
 
 test('feature requests require explicit fix intent before draft PRs by default', () => {

@@ -38,8 +38,11 @@ export interface ActionInputs {
   maxQueueAttempts: number;
   maxPiCalls: number;
   piTimeoutMs: number;
+  piRetries: number;
   approveProjectResources: boolean;
   stateEnabled: boolean;
+  repoMemoryEnabled: boolean;
+  progressComments: boolean;
   stateRepo: string;
   stateBranch: string;
   commentMarker: string;
@@ -85,12 +88,15 @@ export function getInputs(): ActionInputs {
     maxQueueAttempts: parsePositiveInt(core.getInput('max-queue-attempts') || '3', 'max-queue-attempts'),
     maxPiCalls: parsePositiveInt(core.getInput('max-pi-calls') || '16', 'max-pi-calls'),
     piTimeoutMs: parsePositiveInt(core.getInput('pi-timeout-ms') || '600000', 'pi-timeout-ms'),
+    piRetries: parseNonNegativeInt(core.getInput('pi-retries') || '3', 'pi-retries'),
     approveProjectResources: parseBoolean(core.getInput('approve-project-resources')),
     stateEnabled: parseBoolean(core.getInput('state-enabled')),
+    repoMemoryEnabled: parseBoolean(core.getInput('repo-memory-enabled') || 'true'),
+    progressComments: parseBoolean(core.getInput('progress-comments') || 'true'),
     stateRepo: core.getInput('state-repo'),
     stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',
     commentMarker: core.getInput('comment-marker') || '<!-- posthog-watcher-action -->',
-    piVersion: core.getInput('pi-version') || '0.79.10',
+    piVersion: core.getInput('pi-version') || '0.80.3',
   };
 }
 
