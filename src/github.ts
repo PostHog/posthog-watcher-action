@@ -4,9 +4,11 @@ import type { IssueSnapshot } from './issue-context.js';
 
 export type Octokit = ReturnType<typeof github.getOctokit>;
 
-const CLIENT_LIBRARIES_REVIEW_TEAM = 'PostHog/team-client-libraries';
-const CLIENT_LIBRARIES_REVIEW_TEAM_ORG = 'PostHog';
-const CLIENT_LIBRARIES_REVIEW_TEAM_SLUG = 'team-client-libraries';
+interface TeamReviewer {
+  display: string;
+  org?: string;
+  slug: string;
+}
 
 export interface RepositoryLabel {
   name: string;
@@ -161,17 +163,20 @@ export async function createDraftPullRequest(octokit: Octokit, params: {
   return { number: created.data.number, url: created.data.html_url };
 }
 
-export async function ensureClientLibrariesReviewRequested(octokit: Octokit, pullNumber: number): Promise<void> {
+export async function ensureTeamReviewRequested(octokit: Octokit, pullNumber: number, reviewTeam: string): Promise<void> {
+  const team = parseTeamReviewer(reviewTeam);
+  if (!team) return;
+
   const { owner, repo } = github.context.repo;
-  if (owner.toLowerCase() !== CLIENT_LIBRARIES_REVIEW_TEAM_ORG.toLowerCase()) {
-    core.warning(`Skipping ${CLIENT_LIBRARIES_REVIEW_TEAM} review request for ${owner}/${repo}#${pullNumber}; repository is not in the ${CLIENT_LIBRARIES_REVIEW_TEAM_ORG} org.`);
+  if (team.org && owner.toLowerCase() !== team.org.toLowerCase()) {
+    core.warning(`Skipping ${team.display} review request for ${owner}/${repo}#${pullNumber}; repository is not in the ${team.org} org.`);
     return;
   }
 
   const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
   const requestedTeams = (pull.data.requested_teams ?? []) as Array<{ slug?: string | null }>;
-  if (requestedTeams.some((team) => team.slug?.toLowerCase() === CLIENT_LIBRARIES_REVIEW_TEAM_SLUG)) {
-    core.info(`${CLIENT_LIBRARIES_REVIEW_TEAM} is already requested on PR #${pullNumber}.`);
+  if (requestedTeams.some((requested) => requested.slug?.toLowerCase() === team.slug.toLowerCase())) {
+    core.info(`${team.display} is already requested on PR #${pullNumber}.`);
     return;
   }
 
@@ -179,9 +184,28 @@ export async function ensureClientLibrariesReviewRequested(octokit: Octokit, pul
     owner,
     repo,
     pull_number: pullNumber,
-    team_reviewers: [CLIENT_LIBRARIES_REVIEW_TEAM_SLUG],
+    team_reviewers: [team.slug],
   });
-  core.info(`Requested review from ${CLIENT_LIBRARIES_REVIEW_TEAM} on PR #${pullNumber}.`);
+  core.info(`Requested review from ${team.display} on PR #${pullNumber}.`);
+}
+
+function parseTeamReviewer(reviewTeam: string): TeamReviewer | undefined {
+  const normalized = reviewTeam.trim().replace(/^@/, '');
+  if (!normalized) return undefined;
+
+  const parts = normalized.split('/');
+  if (parts.length > 2 || parts.some((part) => !part.trim())) {
+    throw new Error('fix-pr-review-team must be a team slug or org/team');
+  }
+
+  const org = parts.length === 2 ? parts[0] : undefined;
+  const slug = parts.length === 2 ? parts[1] : parts[0];
+  if (!slug) throw new Error('fix-pr-review-team must be a team slug or org/team');
+  return {
+    display: org ? `${org}/${slug}` : slug,
+    org,
+    slug,
+  };
 }
 
 export function defaultBranch(): string {

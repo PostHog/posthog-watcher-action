@@ -13,6 +13,7 @@ export interface ActionInputs {
   allowClose: boolean;
   allowSecurityAi: boolean;
   requireFixCommand: boolean;
+  blockFeatureFixes: boolean;
   dryRun: boolean;
   labelAllowlist: string[];
   managedLabelPrefix: string;
@@ -25,6 +26,7 @@ export interface ActionInputs {
   validationCommand: string;
   reproductionCommand: string;
   requireReproduction: boolean;
+  fixPrReviewTeam: string;
   commitSha?: string;
   maxSweepItems: number;
   maxSweepFixItems: number;
@@ -58,6 +60,7 @@ export function getInputs(): ActionInputs {
     allowClose: parseBoolean(core.getInput('allow-close')),
     allowSecurityAi: parseBoolean(core.getInput('allow-security-ai')),
     requireFixCommand: parseBoolean(core.getInput('require-fix-command')),
+    blockFeatureFixes: parseBoolean(core.getInput('block-feature-fixes') || 'true'),
     dryRun: parseBoolean(core.getInput('dry-run')),
     labelAllowlist: parseCsv(core.getInput('labels') || '*'),
     managedLabelPrefix: core.getInput('managed-label-prefix') || 'posthog-watcher:',
@@ -70,6 +73,7 @@ export function getInputs(): ActionInputs {
     validationCommand: core.getInput('validation-command'),
     reproductionCommand: core.getInput('reproduction-command'),
     requireReproduction: parseBoolean(core.getInput('require-reproduction')),
+    fixPrReviewTeam: core.getInput('fix-pr-review-team').trim(),
     commitSha: core.getInput('commit-sha') || undefined,
     maxSweepItems: parsePositiveInt(core.getInput('max-sweep-items') || '10', 'max-sweep-items'),
     maxSweepFixItems: parseNonNegativeInt(core.getInput('max-sweep-fix-items') || '0', 'max-sweep-fix-items'),

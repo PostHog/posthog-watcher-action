@@ -235,23 +235,46 @@ test('repository labels can be used dynamically with descriptions', () => {
   assert.match(readme, /Label descriptions are included/);
 });
 
-test('fix PRs request client libraries team review when needed', () => {
+test('fix PRs request a configurable team review when configured', () => {
   const fixRunner = read('src/fix-runner.ts');
   const github = read('src/github.ts');
+  const inputs = read('src/inputs.ts');
+  const action = read('action.yml');
   const readme = read('README.md');
-  assert.match(fixRunner, /ensureClientLibrariesReviewRequested/);
-  assert.match(github, /PostHog\/team-client-libraries/);
+  assert.match(fixRunner, /ensureTeamReviewRequested/);
+  assert.match(fixRunner, /inputs\.fixPrReviewTeam/);
+  assert.match(github, /parseTeamReviewer/);
   assert.match(github, /requested_teams/);
-  assert.match(github, /team_reviewers: \[CLIENT_LIBRARIES_REVIEW_TEAM_SLUG\]/);
-  assert.match(readme, /PostHog\/team-client-libraries/);
+  assert.match(github, /team_reviewers: \[team\.slug\]/);
+  assert.match(inputs, /fixPrReviewTeam: core\.getInput\('fix-pr-review-team'\)\.trim\(\)/);
+  assert.match(action, /fix-pr-review-team/);
+  assert.match(readme, /`fix-pr-review-team`/);
 });
 
-test('feature requests require explicit fix intent before draft PRs', () => {
+test('sweep comments can mention the configured fix PR review team', () => {
   const index = read('src/index.ts');
+  const comment = read('src/comment.ts');
+  const readme = read('README.md');
+  assert.match(index, /sweepAttentionMention/);
+  assert.match(index, /inputs\.mode !== 'sweep'/);
+  assert.match(index, /inputs\.fixPrReviewTeam/);
+  assert.match(comment, /please review this sweep triage/);
+  assert.match(readme, /new sweep triage\/security comments mention that team/);
+});
+
+test('feature requests require explicit fix intent before draft PRs by default', () => {
+  const index = read('src/index.ts');
+  const inputs = read('src/inputs.ts');
+  const action = read('action.yml');
+  const readme = read('README.md');
   assert.match(index, /featureFixBlocker/);
+  assert.match(index, /!inputs\.blockFeatureFixes/);
   assert.match(index, /triage\.issueType !== 'feature'/);
   assert.match(index, /feature requests require an explicit trusted fix command or mode: fix/);
   assert.match(index, /fixExplicitlyRequested/);
+  assert.match(inputs, /blockFeatureFixes: parseBoolean\(core\.getInput\('block-feature-fixes'\) \|\| 'true'\)/);
+  assert.match(action, /block-feature-fixes/);
+  assert.match(readme, /`block-feature-fixes`/);
 });
 
 test('fix PRs use host pull request template when present', () => {

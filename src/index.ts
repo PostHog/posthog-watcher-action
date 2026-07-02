@@ -233,7 +233,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
       for (const label of staleLabels) await removeLabel(octokit, issue.number, label);
       await addLabels(octokit, issue.number, managedLabels);
     }
-    const commentBody = redactSecrets(buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons, snapshotHash), [inputs.openaiApiKey, inputs.githubToken]);
+    const commentBody = redactSecrets(buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons, snapshotHash, sweepAttentionMention(inputs, issue.owner)), [inputs.openaiApiKey, inputs.githubToken]);
     const commentUrl = inputs.dryRun ? '' : await upsertIssueComment(octokit, issue.number, inputs.commentMarker, commentBody);
     await writeStateRecord(octokit, inputs, {
       kind: 'issue',
@@ -297,7 +297,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     }
   }
 
-  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash), [inputs.openaiApiKey, inputs.githubToken]);
+  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue.owner)), [inputs.openaiApiKey, inputs.githubToken]);
   let commentUrl = '';
   if (inputs.dryRun) {
     core.info(`[dry-run] Would upsert issue comment:\n${commentBody}`);
@@ -334,7 +334,15 @@ function fixCommandBlocker(inputs: ActionInputs, command: CommandResolution): st
   return fixExplicitlyRequested(inputs, command) ? undefined : 'require-fix-command is enabled and no trusted fix command was provided';
 }
 
+function sweepAttentionMention(inputs: ActionInputs, owner: string): string | undefined {
+  if (inputs.mode !== 'sweep') return undefined;
+  const reviewTeam = inputs.fixPrReviewTeam.trim().replace(/^@/, '');
+  if (!reviewTeam) return undefined;
+  return `@${reviewTeam.includes('/') ? reviewTeam : `${owner}/${reviewTeam}`}`;
+}
+
 function featureFixBlocker(triage: TriageResult, inputs: ActionInputs, command: CommandResolution): string | undefined {
+  if (!inputs.blockFeatureFixes) return undefined;
   if (triage.issueType !== 'feature') return undefined;
   return fixExplicitlyRequested(inputs, command) ? undefined : 'feature requests require an explicit trusted fix command or mode: fix before opening a draft PR';
 }
