@@ -43,6 +43,10 @@ inputs:
     description: Require a trusted @posthog-watcher fix command before opening or updating fix PRs
     required: false
     default: 'false'
+  block-feature-fixes:
+    description: Require explicit fix intent before opening fix PRs for feature requests
+    required: false
+    default: 'true'
   dry-run:
     description: Log intended GitHub mutations without applying them
     required: false
@@ -91,6 +95,10 @@ inputs:
     description: Require a failing reproduction before issue fix PR attempts. Uses reproduction-command, or validation-command after pi adds a minimal regression check.
     required: false
     default: 'false'
+  fix-pr-review-team:
+    description: Optional team reviewer slug or org/team (for example PostHog/team-client-libraries) for generated fix PRs. Empty means no team review request.
+    required: false
+    default: ''
   commit-sha:
     description: Commit SHA to review when mode is commit-review. Defaults to github.sha.
     required: false

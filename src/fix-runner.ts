@@ -1,6 +1,6 @@
 import * as core from '@actions/core';
 import { readFile } from 'node:fs/promises';
-import { createDraftPullRequest, defaultBranch, ensureClientLibrariesReviewRequested, findOpenPullRequestForBranch, type Octokit } from './github.js';
+import { createDraftPullRequest, defaultBranch, ensureTeamReviewRequested, findOpenPullRequestForBranch, type Octokit } from './github.js';
 import { git } from './git.js';
 import type { ActionInputs } from './inputs.js';
 import type { IssueSnapshot } from './issue-context.js';
@@ -54,7 +54,7 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
     core.info(`Created GitHub-signed commit: ${commit.url}`);
 
     if (existingPr) {
-      await ensureClientLibrariesReviewRequested(octokit, existingPr.number);
+      await ensureTeamReviewRequested(octokit, existingPr.number, inputs.fixPrReviewTeam);
       core.info(`Updated existing draft PR: ${existingPr.url}`);
       return existingPr.url;
     }
@@ -65,7 +65,7 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
       base,
       body: buildPullRequestBody(issue, triage, repair.files, inputs.validationCommand, pullRequestTemplate),
     });
-    await ensureClientLibrariesReviewRequested(octokit, pr.number);
+    await ensureTeamReviewRequested(octokit, pr.number, inputs.fixPrReviewTeam);
 
     core.info(`Created draft PR: ${pr.url}`);
     return pr.url;
