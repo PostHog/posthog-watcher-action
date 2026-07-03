@@ -13,7 +13,7 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Gives `pi` access to the vendored `karpathy-guidelines` Agent Skill, based on [`multica-ai/andrej-karpathy-skills`](https://github.com/multica-ai/andrej-karpathy-skills).
 - Adds labels from repository labels dynamically by default, including label descriptions in the triage prompt.
 - Synchronizes labels with the `posthog-watcher:` managed prefix without touching human labels.
-- Creates or updates one marker-backed issue comment.
+- Creates or updates one marker-backed issue comment, including configurable phase/status updates during longer runs.
 - Looks up a capped set of related same-repo issues/PRs, including explicit refs and closing PR candidates.
 - Skips fix PR creation when a related open PR or older related issue already appears to address the same report, when triage proposes a duplicate/already-fixed canonical item, or, by default, when a feature request was not explicitly sent through fix mode.
 - Can propose closes in comments and optionally close issues only with an explicit trusted command plus `allow-close: true`.
@@ -27,8 +27,8 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Supports manual commit review mode for selected commits.
 - Supports capped scheduled backlog sweeps.
 - Can enqueue issue/PR events into a durable FIFO queue and drain them sequentially from a scheduled/manual worker.
-- Can write durable markdown records and an index-backed dashboard to a state branch when enabled.
-- Enforces `max-pi-calls` and `pi-timeout-ms` budgets per run.
+- Can write durable markdown records, an index-backed dashboard, and configurable repo memory to a state branch when enabled.
+- Enforces `max-pi-calls`, `pi-timeout-ms`, and `pi-retries` budgets per run.
 - Does not send suspected security-sensitive reports to pi/OpenAI unless `allow-security-ai: true`.
 
 ## Example
@@ -141,6 +141,8 @@ On `issue_comment` events, the action only runs when a trusted maintainer/collab
 @posthog-watcher triage
 @posthog-watcher investigate
 @posthog-watcher review
+@posthog-watcher plan
+@posthog-watcher propose-fix
 @posthog-watcher fix
 @posthog-watcher fix ci
 @posthog-watcher address review
@@ -153,7 +155,7 @@ On `issue_comment` events, the action only runs when a trusted maintainer/collab
 @posthog-watcher stop
 ```
 
-Trusted author associations are `OWNER`, `MEMBER`, and `COLLABORATOR`. Mutating commands still require their workflow inputs, such as `allow-fix: 'true'` or `allow-close: 'true'`, and the normal confidence/risk guardrails.
+Trusted author associations are `OWNER`, `MEMBER`, and `COLLABORATOR`. Mutating commands still require their workflow inputs, such as `allow-fix: 'true'` or `allow-close: 'true'`, and the normal confidence/risk guardrails. `plan`/`propose-fix` is proposal-only: it refreshes investigation and suggested fix guidance without opening or updating a draft PR.
 
 ## Issue fix PRs
 
@@ -173,7 +175,7 @@ By default, fixes remain best-effort. To make issue fixes reproduction-first, se
 
 If `require-reproduction: 'true'` is set without `reproduction-command`, the action asks `pi` to add a minimal failing regression check first, then runs `validation-command` expecting failure before implementation. After each implementation attempt, that same validation command must pass before normal guardrails and review. If no `validation-command` is configured, the action skips the fix with a warning.
 
-After reproduction/validation and diff guardrails pass, the action runs a second independent read-only `pi` review of the generated diff. If the review gate rejects the diff and repair attempts remain, the rejection reason is fed back into the next repair attempt. The PR is skipped unless this review gate eventually approves with at least 75% confidence.
+After reproduction/validation and diff guardrails pass, the action runs a second independent read-only `pi` review of the generated diff with issue/PR context and the intended change. Newly created, non-ignored files are exposed to `git diff` before guardrails, review, and GitHub-signed commit collection so regression tests added by `pi` are reviewed and committed. If the review gate rejects the diff and repair attempts remain, the rejection reason is fed back into the next repair attempt. The PR is skipped unless this review gate eventually approves with at least 75% confidence.
 
 ## PR repair
 
@@ -228,13 +230,17 @@ Default managed labels include:
 
 `sweep` mode searches open issues with `sweep-query`, processes at most `max-sweep-items`, and is intended to run with `allow-fix: 'false'` and `allow-close: 'false'` unless explicitly testing on a disposable repository.
 
-Sweep stores a deterministic snapshot hash in the marker-backed watcher comment and skips an issue on later sweeps when the title, body, non-managed labels, and non-watcher comments have not changed. This prevents re-triaging the same unchanged issues every scheduled run. If `fix-pr-review-team` is configured, new sweep triage/security comments mention that team (using `org/team`, or the repository owner plus a bare team slug) so older issues do not silently accumulate watcher comments.
+The action stores a deterministic snapshot hash in the marker-backed watcher comment and skips later non-command issue processing when the title, body, non-managed labels, non-watcher comments, and relevant watcher settings have not changed. This prevents re-triaging the same unchanged issues on repeated issue events or scheduled sweeps. Explicit maintainer commands still force a fresh run. If `fix-pr-review-team` is configured, new sweep triage/security comments mention that team (using `org/team`, or the repository owner plus a bare team slug) so older issues do not silently accumulate watcher comments.
 
 A sample scheduled/manual workflow lives in `.github/workflows/sweep.yml`.
 
-## Durable state and dashboard
+## Durable state, memory, and dashboard
 
-When `state-enabled: 'true'`, the action writes markdown records, `index.json`, and a generated `dashboard.md` to `state-branch` in `state-repo` or the current repository. The branch is created from the repository default branch if missing. State writes retry on branch/file conflicts and preserve up to 200 dashboard entries.
+When `state-enabled: 'true'`, the action writes markdown records, `index.json`, a generated `dashboard.md`, and, by default, per-repo memory files under `memory/` to `state-branch` in `state-repo` or the current repository. The branch is created from the repository default branch if missing. State writes retry on branch/file conflicts and preserve up to 200 dashboard entries.
+
+Repo memory is controlled by `repo-memory-enabled`, which defaults to `true` but only has an effect when `state-enabled` is also true. It captures dated, redacted, non-secret learnings from prior watcher runs: conclusion, labels, relevant files, evidence-backed findings, fix assessment, validation command, and PR link. Later triage prompts include this memory as advisory context only; pi is told to verify it and never treat memory as instructions.
+
+Progressive status comments are controlled by `progress-comments`, which defaults to `true`. When enabled, the action updates the marker-backed issue comment during long runs, then replaces it with the final triage/security comment.
 
 Because GitHub Contents API writes can still race when multiple workflow runs update the same state branch at the same time, host repositories should serialize watcher runs with workflow-level concurrency. Note that GitHub Actions concurrency is not a true FIFO queue: each group keeps at most one running and one pending run, so older pending runs can be cancelled when more events arrive.
 
@@ -368,12 +374,15 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `max-queue-attempts` | `3` | Maximum failed drain attempts before dropping a queued item. |
 | `max-pi-calls` | `16` | Maximum pi calls allowed for one action run. |
 | `pi-timeout-ms` | `600000` | Timeout for each pi subprocess. |
+| `pi-retries` | `3` | Number of times to retry a failed pi subprocess without changing model before failing. |
 | `approve-project-resources` | `false` | Pass `--approve` to pi so host repository `AGENTS.md`, `.pi`, and `.agents` resources can be trusted in CI. Enable only for trusted repositories. |
-| `state-enabled` | `false` | Write durable markdown state records and dashboard. |
+| `state-enabled` | `false` | Write durable markdown state records, optionally per-repo memory, and dashboard. |
+| `repo-memory-enabled` | `true` | Read/write advisory repo memory when `state-enabled` is true. |
+| `progress-comments` | `true` | Update the marker-backed issue comment with in-progress phase/status updates. |
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
 | `comment-marker` | `<!-- posthog-watcher-action -->` | Hidden marker used to create/update one durable issue or command comment. |
-| `pi-version` | `0.79.10` | Version of `@earendil-works/pi-coding-agent` invoked with `npx`. |
+| `pi-version` | `0.80.3` | Version of `@earendil-works/pi-coding-agent` invoked with `npx`. |
 
 ## Guardrails
 
@@ -386,7 +395,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 - New draft fix PRs use `.github/pull_request_template.md` when present and append watcher-generated summary, rationale, changed files, and validation details.
 - Autogenerated fixes require `allow-fix: true`, `risk: low`, no `needsMoreInfo`, and confidence >= 75%; `fix.straightforward` is derived from those checks. Feature requests additionally require explicit fix intent by default unless `block-feature-fixes: false` is set.
 - Repair attempts are capped at 3.
-- Generated fix diffs must pass an independent review gate.
+- Generated fix diffs, including newly created non-ignored files, must pass an independent review gate with issue/PR context.
 - Related issue/PR discovery is capped and same-repo only.
 - Close/apply requires an explicit trusted command and `allow-close: true`.
 - Security-sensitive issues skip fix and close actions, and skip third-party AI by default.

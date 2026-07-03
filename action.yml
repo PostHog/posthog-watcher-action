@@ -143,14 +143,26 @@ inputs:
     description: Timeout in milliseconds for each pi subprocess
     required: false
     default: '600000'
+  pi-retries:
+    description: Number of times to retry a failed pi subprocess before failing
+    required: false
+    default: '3'
   approve-project-resources:
     description: Pass --approve to pi so host repository AGENTS.md, .pi, and .agents resources can be trusted in CI
     required: false
     default: 'false'
   state-enabled:
-    description: Whether to write durable markdown state records and dashboard to state-branch
+    description: Whether to write durable markdown state records, repo memory, and dashboard to state-branch
     required: false
     default: 'false'
+  repo-memory-enabled:
+    description: Whether to read/write advisory repo memory when state-enabled is true
+    required: false
+    default: 'true'
+  progress-comments:
+    description: Whether to update the marker-backed issue comment with in-progress phase/status updates
+    required: false
+    default: 'true'
   state-repo:
     description: Repository for durable state as owner/repo. Defaults to current repository.
     required: false
@@ -166,7 +178,7 @@ inputs:
   pi-version:
     description: Version of @earendil-works/pi-coding-agent to invoke with npx
     required: false
-    default: '0.79.10'
+    default: '0.80.3'
 
 outputs:
   conclusion:

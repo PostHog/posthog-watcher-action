@@ -2,14 +2,14 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { replyToCommand } from './command-replies.js';
 import { resolveCommand, type CommandResolution } from './commands.js';
-import { buildSecurityComment, buildTriageComment } from './comment.js';
+import { buildSecurityComment, buildStatusComment, buildTriageComment } from './comment.js';
 import { reviewCommit } from './commit-review.js';
 import { assessDuplicate } from './duplicate-detector.js';
 import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
 import { addLabels, closeIssue, getIssueComment, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
 import { getInputs, type ActionInputs } from './inputs.js';
-import { formatIssuePrompt } from './issue-context.js';
+import { formatIssuePrompt, type IssueSnapshot } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
 import { filterAllowedLabels } from './labels.js';
 import { getPiCallCount, resetPiCallCount } from './pi-budget.js';
@@ -20,7 +20,7 @@ import { repairPullRequest } from './pr-repair-runner.js';
 import { getRelatedContext } from './related.js';
 import { assessIssueSecurity } from './security.js';
 import { computeIssueSnapshotHash, findWatcherSnapshot } from './snapshot.js';
-import { writeStateRecord } from './state.js';
+import { appendRepoMemory, readRepoMemory, writeStateRecord } from './state.js';
 import { parseTriageResult, type TriageResult } from './triage-schema.js';
 
 async function main(): Promise<void> {
@@ -199,18 +199,20 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   core.info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
 
   const issue = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
-  const snapshotHash = computeIssueSnapshotHash(issue, inputs.commentMarker);
+  const snapshotHash = computeIssueSnapshotHash(issue, inputs.commentMarker, issueSnapshotHashOptions(inputs));
   const previousSnapshot = findWatcherSnapshot(issue, inputs.commentMarker);
-  if (inputs.mode === 'sweep' && previousSnapshot.hash === snapshotHash) {
-    core.info(`Skipping issue #${issue.number} during sweep because its snapshot has not changed.`);
+  if (shouldSkipUnchangedIssue(inputs, command, previousSnapshot.hash, snapshotHash)) {
+    core.info(`Skipping issue #${issue.number} because its watcher snapshot has not changed.`);
     return {
-      conclusion: 'skipped unchanged issue during sweep',
+      conclusion: 'skipped unchanged issue',
       labels: issue.labels,
       commentUrl: previousSnapshot.url ?? '',
       triageJson: JSON.stringify({ skipped: true, reason: 'unchanged', snapshotHash }),
       closed: false,
     };
   }
+
+  await updateIssueStatus(octokit, inputs, issue, 'Preparing', 'Fetching repository labels and checking safety guardrails.', sweepAttentionMention(inputs, issue.owner));
 
   const repositoryLabels = await listRepositoryLabels(octokit);
   const repositoryLabelNames = repositoryLabels.map((label) => label.name);
@@ -247,6 +249,18 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
       closed: false,
       data: { security, redacted: true, snapshotHash, piCalls: getPiCallCount() },
     });
+    if (inputs.repoMemoryEnabled) {
+      await appendRepoMemory(octokit, inputs, {
+        owner: issue.owner,
+        repo: issue.repo,
+        item: `issue #${issue.number}`,
+        title: issue.title,
+        conclusion: 'security-sensitive; human review required',
+        labels: managedLabels,
+        url: issue.url,
+        findings: [`Routed to human review without AI. Reasons: ${security.reasons.join(', ') || 'unknown'}`],
+      });
+    }
     return {
       conclusion: 'security-sensitive; human review required',
       labels: managedLabels,
@@ -256,13 +270,15 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     };
   }
 
+  const repoMemory = inputs.repoMemoryEnabled ? await readRepoMemory(octokit, inputs, issue.owner, issue.repo) : '';
   const relatedItems = await getRelatedContext(octokit, issue, inputs.maxRelatedItems);
   const duplicate = assessDuplicate(issue, relatedItems);
 
+  await updateIssueStatus(octokit, inputs, issue, 'Triaging with pi', repoMemory ? 'Loaded repository memory and related issue context; asking pi for an evidence-backed triage.' : 'Loaded related issue context; asking pi for an evidence-backed triage.', sweepAttentionMention(inputs, issue.owner));
   const piOutput = await runPi({
     inputs,
     tools: ['read', 'grep', 'find', 'ls'],
-    prompt: formatIssuePrompt(issue, allowedExistingLabels, inputs.mode, relatedItems),
+    prompt: formatIssuePrompt(issue, allowedExistingLabels, inputs.mode, relatedItems, repoMemory),
   });
 
   const triage = parseTriageResult(piOutput);
@@ -275,6 +291,8 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   const staleLabels = inputs.syncManagedLabels ? staleManagedLabels(issue.labels, managedLabels, inputs.managedLabelPrefix) : [];
   const allLabels = [...new Set([...labels, ...managedLabels])];
 
+  await updateIssueStatus(octokit, inputs, issue, 'Applying triage results', `Conclusion: ${triage.conclusion}. Applying labels and evaluating fix/close gates.`, sweepAttentionMention(inputs, issue.owner));
+
   if (inputs.dryRun) {
     core.info(`[dry-run] Would add labels to #${issue.number}: ${allLabels.join(', ') || '(none)'}`);
     core.info(`[dry-run] Would remove stale managed labels from #${issue.number}: ${staleLabels.join(', ') || '(none)'}`);
@@ -283,8 +301,11 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     await addLabels(octokit, issue.number, allLabels);
   }
 
-  const fixBlocker = (await findPreExistingFixBlocker(octokit, issue, relatedItems, triage, duplicate)) ?? fixCommandBlocker(inputs, command) ?? featureFixBlocker(triage, inputs, command);
+  const fixBlocker = (await findPreExistingFixBlocker(octokit, issue, relatedItems, triage, duplicate)) ?? planCommandBlocker(command) ?? fixCommandBlocker(inputs, command) ?? featureFixBlocker(triage, inputs, command);
   if (fixBlocker) core.info(`Skipping fix PR: ${fixBlocker}`);
+  if (!security.sensitive && !fixBlocker && shouldReportFixAttempt(triage, inputs)) {
+    await updateIssueStatus(octokit, inputs, issue, 'Attempting fix PR', 'Running the guarded repair loop, validation, diff guardrails, and independent review gate.', sweepAttentionMention(inputs, issue.owner));
+  }
   const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs);
   let closed = false;
   if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, duplicate.duplicate, duplicate.score, security.sensitive)) {
@@ -318,6 +339,22 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     closed,
     data: { triage, relatedItems, duplicate, security, fixBlocker, snapshotHash, command: command.command, piCalls: getPiCallCount(), runId: github.context.runId, runUrl: runUrl() },
   });
+  if (inputs.repoMemoryEnabled) {
+    await appendRepoMemory(octokit, inputs, {
+      owner: issue.owner,
+      repo: issue.repo,
+      item: `issue #${issue.number}`,
+      title: issue.title,
+      conclusion: triage.conclusion,
+      labels: allLabels,
+      url: issue.url,
+      prUrl,
+      relevantFiles: triage.investigation.relevantFiles,
+      findings: triage.investigation.findings,
+      fixReason: triage.fix.reason,
+      validationCommand: inputs.validationCommand,
+    });
+  }
 
   return {
     conclusion: triage.conclusion,
@@ -327,6 +364,28 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     triageJson: JSON.stringify(triage),
     closed,
   };
+}
+
+async function updateIssueStatus(octokit: Octokit, inputs: ActionInputs, issue: IssueSnapshot, phase: string, detail: string, attentionMention?: string): Promise<void> {
+  if (!inputs.progressComments) return;
+  const body = redactSecrets(buildStatusComment(inputs.commentMarker, issue, phase, detail, undefined, attentionMention), [inputs.openaiApiKey, inputs.githubToken]);
+  if (inputs.dryRun) {
+    core.info(`[dry-run] Would update watcher status for #${issue.number}: ${phase} - ${detail}`);
+    return;
+  }
+  await upsertIssueComment(octokit, issue.number, inputs.commentMarker, body);
+}
+
+function shouldReportFixAttempt(triage: TriageResult, inputs: ActionInputs): boolean {
+  if (!inputs.allowFix) return false;
+  if (inputs.mode === 'triage' || inputs.mode === 'investigate') return false;
+  if (triage.confidence < 0.75) return false;
+  if (triage.needsMoreInfo) return false;
+  return triage.fix.risk === 'low';
+}
+
+function planCommandBlocker(command: CommandResolution): string | undefined {
+  return command.command === 'plan' ? 'plan command requested a proposal only; no draft PR was opened' : undefined;
 }
 
 function fixCommandBlocker(inputs: ActionInputs, command: CommandResolution): string | undefined {
@@ -384,6 +443,28 @@ function shouldCloseIssue(
   securitySensitive: boolean,
 ): boolean {
   return Boolean(command.applyClose && inputs.allowClose && !securitySensitive && ((proposed && confidence >= 0.95) || (duplicate && duplicateScore >= 0.55)));
+}
+
+function shouldSkipUnchangedIssue(inputs: ActionInputs, command: CommandResolution, previousHash: string | undefined, snapshotHash: string): boolean {
+  if (previousHash !== snapshotHash) return false;
+  if (command.command) return false;
+  return inputs.mode === 'auto' || inputs.mode === 'triage' || inputs.mode === 'investigate' || inputs.mode === 'sweep';
+}
+
+function issueSnapshotHashOptions(inputs: ActionInputs) {
+  return {
+    managedLabelPrefix: inputs.managedLabelPrefix,
+    mode: inputs.mode,
+    allowFix: inputs.allowFix,
+    allowClose: inputs.allowClose,
+    requireFixCommand: inputs.requireFixCommand,
+    blockFeatureFixes: inputs.blockFeatureFixes,
+    validationCommand: inputs.validationCommand,
+    reproductionCommand: inputs.reproductionCommand,
+    requireReproduction: inputs.requireReproduction,
+    repoMemoryEnabled: inputs.repoMemoryEnabled,
+    progressComments: inputs.progressComments,
+  };
 }
 
 function minimalSecurityTriage(): TriageResult {

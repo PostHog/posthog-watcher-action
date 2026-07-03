@@ -10,7 +10,14 @@ export interface ReviewGateResult {
   risks: string[];
 }
 
-export async function reviewGeneratedDiff(inputs: ActionInputs): Promise<ReviewGateResult> {
+export interface ReviewGateContext {
+  subject: string;
+  summary?: string;
+  intendedChange?: string;
+  failureContext?: string;
+}
+
+export async function reviewGeneratedDiff(inputs: ActionInputs, context?: ReviewGateContext): Promise<ReviewGateResult> {
   const diff = await git(['diff', '--unified=80']);
   const truncated = diff.length > 60000 ? `${diff.slice(0, 60000)}\n...<diff truncated>` : diff;
   const output = await runPi({
@@ -18,7 +25,7 @@ export async function reviewGeneratedDiff(inputs: ActionInputs): Promise<ReviewG
     tools: ['read', 'grep', 'find', 'ls'],
     prompt: `Independently review this generated diff before a bot PR is pushed.
 
-Return ONLY JSON:
+${formatReviewContext(context)}Return ONLY JSON:
 {
   "approve": true,
   "confidence": 0.0,
@@ -26,7 +33,7 @@ Return ONLY JSON:
   "risks": ["risk bullets"]
 }
 
-Approve only if the diff is narrow, relevant to the issue, low risk, and does not contain unrelated refactors, secrets, workflow changes, or suspicious code.
+Approve only if the diff is narrow, relevant to the supplied issue/PR context, low risk, and does not contain unrelated refactors, secrets, workflow changes, or suspicious code.
 
 Diff:
 \`\`\`diff
@@ -37,6 +44,15 @@ ${truncated}
   const result = parseReviewGate(output);
   core.info(`Review gate: ${result.approve ? 'approved' : 'rejected'} (${Math.round(result.confidence * 100)}%) - ${result.reason}`);
   return result;
+}
+
+function formatReviewContext(context: ReviewGateContext | undefined): string {
+  if (!context) return '';
+  return `Review context:\n- Subject: ${context.subject}\n${context.summary ? `- Summary: ${context.summary}\n` : ''}${context.intendedChange ? `- Intended change: ${context.intendedChange}\n` : ''}${context.failureContext ? `- Failure/review context: ${truncate(context.failureContext, 4000)}\n` : ''}\n`;
+}
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max)}\n...<truncated>` : value;
 }
 
 function parseReviewGate(text: string): ReviewGateResult {
