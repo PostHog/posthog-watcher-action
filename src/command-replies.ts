@@ -27,6 +27,7 @@ export async function replyToCommand(octokit: Octokit, issueNumber: number, inpu
       title: issue.data.title,
       body: issue.data.body ?? '',
       author: issue.data.user?.login ?? 'unknown',
+      authorAssociation: issue.data.author_association ?? 'NONE',
       url: issue.data.html_url,
       labels,
       comments: [],

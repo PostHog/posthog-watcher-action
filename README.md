@@ -228,7 +228,7 @@ Default managed labels include:
 
 ## Scheduled sweep
 
-`sweep` mode searches open issues with `sweep-query`, processes at most `max-sweep-items`, and is intended to run with `allow-fix: 'false'` and `allow-close: 'false'` unless explicitly testing on a disposable repository.
+`sweep` mode searches open issues with `sweep-query`, processes at most `max-sweep-items`, and is intended to run with `allow-fix: 'false'` and `allow-close: 'false'` unless explicitly testing on a disposable repository. By default (`skip-sweep-trusted-authors: 'true'`), scheduled sweeps skip issues created by trusted repository authors (`OWNER`, `MEMBER`, or `COLLABORATOR`) so the bot does not triage issues filed by maintainers/org members.
 
 The action stores a deterministic snapshot hash in the marker-backed watcher comment and skips later non-command issue processing when the title, body, non-managed labels, non-watcher comments, and relevant watcher settings have not changed. This prevents re-triaging the same unchanged issues on repeated issue events or scheduled sweeps. Explicit maintainer commands still force a fresh run. If `fix-pr-review-team` is configured, new sweep triage/security comments mention that team (using `org/team`, or the repository owner plus a bare team slug) so older issues do not silently accumulate watcher comments.
 
@@ -367,6 +367,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `max-sweep-items` | `10` | Maximum open issues to process in `sweep` mode. |
 | `max-sweep-fix-items` | `0` | Maximum sweep items that may attempt fixes. |
 | `sweep-query` | `is:issue is:open archived:false` | Search query suffix for `sweep` mode. |
+| `skip-sweep-trusted-authors` | `true` | In `sweep` mode, skip issues created by trusted repository authors (`OWNER`, `MEMBER`, or `COLLABORATOR`). |
 | `queued-mode` | `auto` | Default processing mode stored by `enqueue` when no trusted watcher command is present: `auto`, `triage`, `investigate`, or `fix`. |
 | `trigger-drain-workflow` | `false` | In `enqueue` mode, dispatch `drain-workflow` after writing a new queue item. Requires `actions: write`; failures are warnings because cron/manual drain can still process the queue. |
 | `drain-workflow` | `posthog-watcher-worker.yml` | Workflow filename or ID to dispatch when `trigger-drain-workflow` is true. |

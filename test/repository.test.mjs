@@ -277,6 +277,26 @@ test('sweep comments can mention the configured fix PR review team', () => {
   assert.match(readme, /new sweep triage\/security comments mention that team/);
 });
 
+test('scheduled sweeps can ignore trusted author issues by default', () => {
+  const action = read('action.yml');
+  const inputs = read('src/inputs.ts');
+  const index = read('src/index.ts');
+  const githubSource = read('src/github.ts');
+  const issueContext = read('src/issue-context.ts');
+  const commands = read('src/commands.ts');
+  const readme = read('README.md');
+  assert.match(commands, /export const TRUSTED_ASSOCIATIONS/);
+  assert.match(githubSource, /authorAssociation: issue\.author_association \?\? 'NONE'/);
+  assert.match(issueContext, /authorAssociation: string/);
+  assert.match(action, /skip-sweep-trusted-authors/);
+  assert.match(inputs, /skipSweepTrustedAuthors: parseBoolean\(core\.getInput\('skip-sweep-trusted-authors'\) \|\| 'true'\)/);
+  assert.match(index, /shouldSkipSweepIssueAuthor/);
+  assert.match(index, /!inputs\.skipSweepTrustedAuthors/);
+  assert.match(index, /skipped trusted author issue/);
+  assert.match(index, /TRUSTED_ASSOCIATIONS\.has\(issue\.authorAssociation\.toUpperCase\(\)\)/);
+  assert.match(readme, /`skip-sweep-trusted-authors`/);
+});
+
 test('state memory and progressive status comments are wired', () => {
   const readme = read('README.md');
   const state = read('src/state.ts');

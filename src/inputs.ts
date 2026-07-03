@@ -31,6 +31,7 @@ export interface ActionInputs {
   maxSweepItems: number;
   maxSweepFixItems: number;
   sweepQuery: string;
+  skipSweepTrustedAuthors: boolean;
   queuedMode: QueuedMode;
   triggerDrainWorkflow: boolean;
   drainWorkflow: string;
@@ -81,6 +82,7 @@ export function getInputs(): ActionInputs {
     maxSweepItems: parsePositiveInt(core.getInput('max-sweep-items') || '10', 'max-sweep-items'),
     maxSweepFixItems: parseNonNegativeInt(core.getInput('max-sweep-fix-items') || '0', 'max-sweep-fix-items'),
     sweepQuery: core.getInput('sweep-query') || 'is:issue is:open archived:false',
+    skipSweepTrustedAuthors: parseBoolean(core.getInput('skip-sweep-trusted-authors') || 'true'),
     queuedMode: normalizeQueuedMode(core.getInput('queued-mode') || 'auto'),
     triggerDrainWorkflow: parseBoolean(core.getInput('trigger-drain-workflow')),
     drainWorkflow: core.getInput('drain-workflow') || 'posthog-watcher-worker.yml',

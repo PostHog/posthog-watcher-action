@@ -115,6 +115,10 @@ inputs:
     description: GitHub search query suffix for sweep mode
     required: false
     default: 'is:issue is:open archived:false'
+  skip-sweep-trusted-authors:
+    description: Whether sweep mode skips issues created by trusted repository authors (OWNER, MEMBER, or COLLABORATOR)
+    required: false
+    default: 'true'
   queued-mode:
     description: Default processing mode stored by enqueue mode when no trusted watcher command is present. One of auto, triage, investigate, or fix.
     required: false
