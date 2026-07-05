@@ -89,6 +89,12 @@ test('pre-existing related fixes block duplicate fix PRs', () => {
   assert.match(detector, /candidate\.score >= 0\.42/);
   assert.match(detector, /curl/);
   assert.match(source, /duplicate/);
+  assert.match(source, /blockingPullRequest/);
+  assert.match(source, /formatDuplicateReason/);
+  assert.match(source, /formatRelatedItemReference/);
+  assert.doesNotMatch(source, /duplicate\.reason\}: #\$\{duplicate\.canonical\.number\} \$\{duplicate\.canonical\.url\}/);
+  assert.match(index, /preExistingFixBlocker/);
+  assert.match(index, /ensureBlockingPrTeamReviewRequested/);
   assert.match(source, /already-fixed/);
   assert.match(source, /closed unmerged PR/);
   assert.match(source, /merged_at/);
@@ -256,8 +262,11 @@ test('fix PRs request a configurable team review when configured', () => {
   const inputs = read('src/inputs.ts');
   const action = read('action.yml');
   const readme = read('README.md');
+  const index = read('src/index.ts');
   assert.match(fixRunner, /ensureTeamReviewRequested/);
   assert.match(fixRunner, /inputs\.fixPrReviewTeam/);
+  assert.match(index, /ensureTeamReviewRequested/);
+  assert.match(index, /existing related PR/);
   assert.match(github, /parseTeamReviewer/);
   assert.match(github, /requested_teams/);
   assert.match(github, /team_reviewers: \[team\.slug\]/);

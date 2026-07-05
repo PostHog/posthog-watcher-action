@@ -7,7 +7,7 @@ import { reviewCommit } from './commit-review.js';
 import { assessDuplicate } from './duplicate-detector.js';
 import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
-import { addLabels, closeIssue, getIssueComment, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
+import { addLabels, closeIssue, ensureTeamReviewRequested, getIssueComment, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
 import { getInputs, type ActionInputs } from './inputs.js';
 import { formatIssuePrompt, type IssueSnapshot } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
@@ -301,7 +301,12 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     await addLabels(octokit, issue.number, allLabels);
   }
 
-  const fixBlocker = (await findPreExistingFixBlocker(octokit, issue, relatedItems, triage, duplicate)) ?? planCommandBlocker(command) ?? fixCommandBlocker(inputs, command) ?? featureFixBlocker(triage, inputs, command);
+  const preExistingFixBlocker = await findPreExistingFixBlocker(octokit, issue, relatedItems, triage, duplicate);
+  const commandFixBlocker = planCommandBlocker(command) ?? fixCommandBlocker(inputs, command) ?? featureFixBlocker(triage, inputs, command);
+  if (preExistingFixBlocker?.blockingPullRequest && !commandFixBlocker && shouldReportFixAttempt(triage, inputs)) {
+    await ensureBlockingPrTeamReviewRequested(octokit, inputs, preExistingFixBlocker.blockingPullRequest.number);
+  }
+  const fixBlocker = preExistingFixBlocker?.reason ?? commandFixBlocker;
   if (fixBlocker) core.info(`Skipping fix PR: ${fixBlocker}`);
   if (!security.sensitive && !fixBlocker && shouldReportFixAttempt(triage, inputs)) {
     await updateIssueStatus(octokit, inputs, issue, 'Attempting fix PR', 'Running the guarded repair loop, validation, diff guardrails, and independent review gate.', sweepAttentionMention(inputs, issue.owner));
@@ -382,6 +387,15 @@ function shouldReportFixAttempt(triage: TriageResult, inputs: ActionInputs): boo
   if (triage.confidence < 0.75) return false;
   if (triage.needsMoreInfo) return false;
   return triage.fix.risk === 'low';
+}
+
+async function ensureBlockingPrTeamReviewRequested(octokit: Octokit, inputs: ActionInputs, pullNumber: number): Promise<void> {
+  if (!inputs.fixPrReviewTeam.trim()) return;
+  if (inputs.dryRun) {
+    core.info(`[dry-run] Would request review from ${inputs.fixPrReviewTeam} on existing related PR #${pullNumber}.`);
+    return;
+  }
+  await ensureTeamReviewRequested(octokit, pullNumber, inputs.fixPrReviewTeam);
 }
 
 function planCommandBlocker(command: CommandResolution): string | undefined {

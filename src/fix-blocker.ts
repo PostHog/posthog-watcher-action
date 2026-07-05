@@ -5,23 +5,28 @@ import type { IssueSnapshot } from './issue-context.js';
 import type { RelatedItem } from './related.js';
 import type { TriageResult } from './triage-schema.js';
 
-export async function findPreExistingFixBlocker(octokit: Octokit, issue: IssueSnapshot, relatedItems: RelatedItem[], triage: TriageResult, duplicate: DuplicateAssessment): Promise<string | undefined> {
+export interface FixBlocker {
+  reason: string;
+  blockingPullRequest?: RelatedItem;
+}
+
+export async function findPreExistingFixBlocker(octokit: Octokit, issue: IssueSnapshot, relatedItems: RelatedItem[], triage: TriageResult, duplicate: DuplicateAssessment): Promise<FixBlocker | undefined> {
   if (duplicate.duplicate && duplicate.canonical) {
-    return `${duplicate.reason}: #${duplicate.canonical.number} ${duplicate.canonical.url}`;
+    return { reason: formatDuplicateReason(duplicate), blockingPullRequest: duplicate.blockingPr };
   }
 
   const relatedPullRequest = relatedItems.find(
     (item) => item.type === 'pull_request' && item.state === 'open' && (item.reason === 'closing-pr' || (item.reason === 'title-search' && titleSimilarity(issue.title, item.title) >= 0.3)),
   );
   if (relatedPullRequest) {
-    return `An open related PR already appears to address this issue: #${relatedPullRequest.number} ${relatedPullRequest.url}`;
+    return { reason: `An open related PR already appears to address this issue: ${formatRelatedItemReference(relatedPullRequest)}`, blockingPullRequest: relatedPullRequest };
   }
 
   const olderDuplicateIssue = relatedItems.find(
     (item) => item.type === 'issue' && item.state === 'open' && item.number < issue.number && item.reason === 'title-search' && titleSimilarity(issue.title, item.title) >= 0.3,
   );
   if (olderDuplicateIssue) {
-    return `An older related issue appears to cover the same report: #${olderDuplicateIssue.number} ${olderDuplicateIssue.url}`;
+    return { reason: `An older related issue appears to cover the same report: ${formatRelatedItemReference(olderDuplicateIssue)}` };
   }
 
   if (
@@ -34,10 +39,24 @@ export async function findPreExistingFixBlocker(octokit: Octokit, issue: IssueSn
       core.info(`Triage proposed closed unmerged PR ${triage.closeProposal.canonicalUrl} as canonical; continuing fix attempt because it did not land.`);
       return undefined;
     }
-    return `Triage proposed this issue as ${triage.closeProposal.category} of ${triage.closeProposal.canonicalUrl}; skipping a duplicate fix PR.`;
+    return { reason: `Triage proposed this issue as ${triage.closeProposal.category} of ${triage.closeProposal.canonicalUrl}; skipping a duplicate fix PR.` };
   }
 
   return undefined;
+}
+
+function formatDuplicateReason(duplicate: DuplicateAssessment): string {
+  if (!duplicate.canonical) return duplicate.reason;
+  const reference = formatRelatedItemReference(duplicate.canonical);
+  const plainReference = `#${duplicate.canonical.number}`;
+  if (duplicate.reason.includes(plainReference)) {
+    return duplicate.reason.replace(plainReference, reference);
+  }
+  return `${duplicate.reason}: ${reference}`;
+}
+
+function formatRelatedItemReference(item: RelatedItem): string {
+  return `[#${item.number}](${item.url})`;
 }
 
 async function getCanonicalPullRequest(octokit: Octokit, url: string): Promise<{ state: 'open' | 'closed'; merged: boolean } | undefined> {
