@@ -322,6 +322,9 @@ test('scheduled sweeps can ignore trusted author issues by default', () => {
   assert.match(index, /!inputs\.skipSweepTrustedAuthors/);
   assert.match(index, /skipped trusted author issue/);
   assert.match(index, /TRUSTED_ASSOCIATIONS\.has\(issue\.authorAssociation\.toUpperCase\(\)\)/);
+  assert.match(index, /getCollaboratorPermissionLevel/);
+  assert.match(index, /TRUSTED_REPOSITORY_PERMISSIONS/);
+  assert.match(readme, /collaborator-permission fallback/);
   assert.match(readme, /`skip-sweep-trusted-authors`/);
 });
 
