@@ -3,6 +3,7 @@ import path from 'node:path';
 import { runCommandStatus } from './git.js';
 import type { ActionInputs } from './inputs.js';
 import { consumePiCall } from './pi-budget.js';
+import { beginPiSessionCapture, finishPiSessionCapture } from './pi-sessions.js';
 import { redactSecrets } from './redact.js';
 
 export interface PiRunOptions {
@@ -26,7 +27,7 @@ export async function runPi(options: PiRunOptions): Promise<string> {
     core.info(`Running pi call ${callNumber}/${options.inputs.maxPiCalls} with model ${options.inputs.model} and tools ${options.tools.join(',')}${attempts > 1 ? ` (attempt ${attempt}/${attempts})` : ''}`);
 
     try {
-      return await runPiOnce(options);
+      return await runPiOnce(options, callNumber);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       if (attempt >= attempts) break;
@@ -41,8 +42,9 @@ function firstLine(value: string): string {
   return value.split('\n')[0] ?? value;
 }
 
-async function runPiOnce(options: PiRunOptions): Promise<string> {
+async function runPiOnce(options: PiRunOptions, callNumber: number): Promise<string> {
   const skillPath = path.join(path.resolve(__dirname, '..'), 'skills', 'karpathy-guidelines', 'SKILL.md');
+  const sessionCapture = await beginPiSessionCapture(options.inputs, callNumber);
   const args = [
     '--yes',
     '--package',
@@ -51,7 +53,7 @@ async function runPiOnce(options: PiRunOptions): Promise<string> {
     ...(options.inputs.approveProjectResources ? ['--approve'] : []),
     '--mode',
     'json',
-    '--no-session',
+    ...sessionCapture.args,
     '--no-extensions',
     '--no-prompt-templates',
     '--skill',
@@ -67,6 +69,7 @@ async function runPiOnce(options: PiRunOptions): Promise<string> {
 
   const env = sanitizedEnv(options.inputs.openaiApiKey);
   const result = await runCommandStatus('npx', args, { cwd: options.cwd ?? process.cwd(), env, timeoutMs: options.inputs.piTimeoutMs });
+  await finishPiSessionCapture(sessionCapture);
   if (result.stderr.trim()) core.debug(result.stderr.trim());
 
   if (result.code !== 0) {

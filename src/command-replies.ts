@@ -1,6 +1,7 @@
 import * as github from '@actions/github';
 import { findOpenPullRequestForBranch, type Octokit, upsertIssueComment } from './github.js';
 import type { ActionInputs } from './inputs.js';
+import { formatPiSessionMarkdown, piSessionRecordCount, publishPiSessionFiles } from './pi-sessions.js';
 import { runPi } from './pi-runner.js';
 import { redactSecrets } from './redact.js';
 import { assessIssueSecurity } from './security.js';
@@ -12,6 +13,7 @@ export async function replyToCommand(octokit: Octokit, issueNumber: number, inpu
   const branch = `posthog-watcher/issue-${issueNumber}`;
   const existingPr = await findOpenPullRequestForBranch(octokit, branch);
   const marker = `${inputs.commentMarker} command:${command}`;
+  const piSessionStartIndex = piSessionRecordCount();
 
   let body = `${marker}\n\n## PostHog Watcher ${command}\n\n`;
 
@@ -44,6 +46,9 @@ export async function replyToCommand(octokit: Octokit, issueNumber: number, inpu
       body += answer;
     }
   }
+
+  const piSessionMarkdown = formatPiSessionMarkdown(await publishPiSessionFiles(octokit, inputs, `${command}-${issueNumber}`, piSessionStartIndex));
+  if (piSessionMarkdown) body += `\n\n${piSessionMarkdown}`;
 
   body = redactSecrets(body, [inputs.openaiApiKey, inputs.githubToken]);
   const commentUrl = inputs.dryRun ? '' : await upsertIssueComment(octokit, issueNumber, marker, body);

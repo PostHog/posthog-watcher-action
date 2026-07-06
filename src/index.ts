@@ -13,6 +13,7 @@ import { formatIssuePrompt, type IssueSnapshot } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
 import { filterAllowedLabels } from './labels.js';
 import { getPiCallCount, resetPiCallCount } from './pi-budget.js';
+import { formatPiSessionMarkdown, piSessionRecordCount, publishPiSessionFiles } from './pi-sessions.js';
 import { runPi } from './pi-runner.js';
 import { enqueueCurrentPayload, incrementQueueAttempt, readQueue, removeQueueItem, type QueueItem } from './queue.js';
 import { redactSecrets } from './redact.js';
@@ -199,6 +200,7 @@ async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
 
 async function processIssue(octokit: Octokit, issueNumber: number, inputs: ActionInputs, command: CommandResolution, forcedCommentId?: number): Promise<ProcessIssueResult> {
   core.info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
+  const piSessionStartIndex = piSessionRecordCount();
 
   const issue = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
   if (shouldSkipSweepIssueAuthor(inputs, command, issue)) {
@@ -336,7 +338,9 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     }
   }
 
-  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue.owner)), [inputs.openaiApiKey, inputs.githubToken]);
+  const piSessionReference = await publishPiSessionFiles(octokit, inputs, `issue-${issue.number}`, piSessionStartIndex);
+  const piSessionMarkdown = formatPiSessionMarkdown(piSessionReference);
+  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue.owner), piSessionMarkdown), [inputs.openaiApiKey, inputs.githubToken]);
   let commentUrl = '';
   if (inputs.dryRun) {
     core.info(`[dry-run] Would upsert issue comment:\n${commentBody}`);
@@ -355,7 +359,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
     url: issue.url,
     prUrl,
     closed,
-    data: { triage, relatedItems, duplicate, security, fixBlocker, snapshotHash, command: command.command, piCalls: getPiCallCount(), runId: github.context.runId, runUrl: runUrl() },
+    data: { triage, relatedItems, duplicate, security, fixBlocker, snapshotHash, command: command.command, piCalls: getPiCallCount(), piSessionReference, runId: github.context.runId, runUrl: runUrl() },
   });
   if (inputs.repoMemoryEnabled) {
     await appendRepoMemory(octokit, inputs, {
@@ -499,6 +503,7 @@ function issueSnapshotHashOptions(inputs: ActionInputs) {
     skipSweepTrustedAuthors: inputs.skipSweepTrustedAuthors,
     repoMemoryEnabled: inputs.repoMemoryEnabled,
     progressComments: inputs.progressComments,
+    piSessionSharing: inputs.piSessionSharing,
   };
 }
 

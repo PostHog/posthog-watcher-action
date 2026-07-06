@@ -44,6 +44,7 @@ export interface ActionInputs {
   stateEnabled: boolean;
   repoMemoryEnabled: boolean;
   progressComments: boolean;
+  piSessionSharing: boolean;
   stateRepo: string;
   stateBranch: string;
   commentMarker: string;
@@ -95,6 +96,7 @@ export function getInputs(): ActionInputs {
     stateEnabled: parseBoolean(core.getInput('state-enabled')),
     repoMemoryEnabled: parseBoolean(core.getInput('repo-memory-enabled') || 'true'),
     progressComments: parseBoolean(core.getInput('progress-comments') || 'true'),
+    piSessionSharing: parseBoolean(core.getInput('pi-session-sharing')),
     stateRepo: core.getInput('state-repo'),
     stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',
     commentMarker: core.getInput('comment-marker') || '<!-- posthog-watcher-action -->',

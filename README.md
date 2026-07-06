@@ -26,6 +26,7 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Pulls failing GitHub Actions job log snippets and review comments into PR repair prompts when available.
 - Supports manual commit review mode for selected commits.
 - Supports capped scheduled backlog sweeps.
+- Can optionally save pi JSONL session files and link fork/resume instructions from watcher comments.
 - Can enqueue issue/PR events into a durable FIFO queue and drain them sequentially from a scheduled/manual worker.
 - Can write durable markdown records, an index-backed dashboard, and configurable repo memory to a state branch when enabled.
 - Enforces `max-pi-calls`, `pi-timeout-ms`, and `pi-retries` budgets per run.
@@ -380,6 +381,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `state-enabled` | `false` | Write durable markdown state records, optionally per-repo memory, and dashboard. |
 | `repo-memory-enabled` | `true` | Read/write advisory repo memory when `state-enabled` is true. |
 | `progress-comments` | `true` | Update the marker-backed issue comment with in-progress phase/status updates. |
+| `pi-session-sharing` | `false` | Save captured pi JSONL session files to `state-branch` and add download/`pi --fork` instructions to watcher comments. |
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
 | `comment-marker` | `<!-- posthog-watcher-action -->` | Hidden marker used to create/update one durable issue or command comment. |
@@ -391,6 +393,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 - By default, pi is **not** run with `--approve`. Set `approve-project-resources: true` only for trusted repositories when host repo `AGENTS.md`, `.pi`, and `.agents` resources should be available in CI.
 - Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only `OPENAI_API_KEY` to the pi process, and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
 - The wrapper, not `pi`, performs GitHub API mutations.
+- `pi-session-sharing` is disabled by default. When enabled, pi runs with a temporary session directory, the wrapper saves the generated `.jsonl` files under `pi-sessions/` on `state-branch`, and comments include `pi --fork path/to/session.jsonl` handoff instructions.
 - Draft PR creation is skipped if the diff is too large or touches workflow files, lockfiles, or minified files.
 - Watcher fix/repair commits are created through GitHub's commit API instead of raw `git commit`/`git push`, so they are GitHub-signed Verified commits.
 - New draft fix PRs use `.github/pull_request_template.md` when present and append watcher-generated summary, rationale, changed files, and validation details.

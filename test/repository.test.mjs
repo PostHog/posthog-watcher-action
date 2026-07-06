@@ -219,6 +219,25 @@ test('dedicated queue modes are wired without requiring OpenAI for enqueue', () 
   assert.match(readme, /without `pi` or `openai-api-key`/);
 });
 
+test('pi session sharing is opt-in and links forkable JSONL sessions', () => {
+  const action = read('action.yml');
+  const inputs = read('src/inputs.ts');
+  const piRunner = read('src/pi-runner.ts');
+  const piSessions = read('src/pi-sessions.ts');
+  const comment = read('src/comment.ts');
+  const readme = read('README.md');
+  assert.match(action, /pi-session-sharing/);
+  assert.match(action, /default: 'false'/);
+  assert.match(inputs, /piSessionSharing/);
+  assert.match(piRunner, /beginPiSessionCapture/);
+  assert.match(piSessions, /--no-session/);
+  assert.match(piSessions, /--session-dir/);
+  assert.match(piSessions, /pi --fork path\/to\/session\.jsonl/);
+  assert.match(piSessions, /pi-sessions\//);
+  assert.match(comment, /piSessionMarkdown/);
+  assert.match(readme, /pi-session-sharing/);
+});
+
 test('queue drain preserves FIFO and retry state', () => {
   const index = read('src/index.ts');
   const queue = read('src/queue.ts');
