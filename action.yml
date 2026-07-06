@@ -116,7 +116,7 @@ inputs:
     required: false
     default: 'is:issue is:open archived:false'
   skip-sweep-trusted-authors:
-    description: Whether sweep mode skips issues created by trusted repository authors (OWNER, MEMBER, or COLLABORATOR)
+    description: Whether sweep mode skips issues created by trusted repository authors (OWNER, MEMBER, or COLLABORATOR), with a collaborator-permission fallback
     required: false
     default: 'true'
   queued-mode:
