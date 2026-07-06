@@ -23924,6 +23924,7 @@ async function getIssueSnapshot(octokit, issueNumber, maxComments, forcedComment
     title: issue2.title,
     body: issue2.body ?? "",
     author: issue2.user?.login ?? "unknown",
+    authorAssociation: issue2.author_association ?? "NONE",
     url: issue2.html_url,
     labels: issue2.labels.map((label) => typeof label === "string" ? label : label.name ?? "").filter(Boolean),
     comments: selectedComments.map((comment) => ({
@@ -24406,6 +24407,7 @@ async function replyToCommand(octokit, issueNumber, inputs, command, questionOve
       title: issue2.data.title,
       body: issue2.data.body ?? "",
       author: issue2.data.user?.login ?? "unknown",
+      authorAssociation: issue2.data.author_association ?? "NONE",
       url: issue2.data.html_url,
       labels,
       comments: []
@@ -25480,6 +25482,7 @@ function getInputs() {
     maxSweepItems: parsePositiveInt(getInput("max-sweep-items") || "10", "max-sweep-items"),
     maxSweepFixItems: parseNonNegativeInt(getInput("max-sweep-fix-items") || "0", "max-sweep-fix-items"),
     sweepQuery: getInput("sweep-query") || "is:issue is:open archived:false",
+    skipSweepTrustedAuthors: parseBoolean(getInput("skip-sweep-trusted-authors") || "true"),
     queuedMode: normalizeQueuedMode(getInput("queued-mode") || "auto"),
     triggerDrainWorkflow: parseBoolean(getInput("trigger-drain-workflow")),
     drainWorkflow: getInput("drain-workflow") || "posthog-watcher-worker.yml",
@@ -26398,7 +26401,9 @@ async function sweep(octokit, inputs) {
   for (const [index, issueNumber] of issueNumbers.entries()) {
     const itemInputs = { ...inputs, allowFix: inputs.allowFix && index < inputs.maxSweepFixItems, allowClose: false };
     try {
-      results.push(await processIssue(octokit, issueNumber, itemInputs, { shouldRun: true }));
+      const result = await processIssue(octokit, issueNumber, itemInputs, { shouldRun: true });
+      results.push(result);
+      if (result.conclusion === "skipped trusted author issue") skipped += 1;
     } catch (error2) {
       if (error2 instanceof Error && /Pi call budget exhausted/.test(error2.message)) {
         skipped += 1;
@@ -26408,12 +26413,22 @@ async function sweep(octokit, inputs) {
       throw error2;
     }
   }
-  setOutput("conclusion", `swept ${results.length} issue(s), skipped ${skipped}`);
+  setOutput("conclusion", `swept ${results.length - skipped} issue(s), skipped ${skipped}`);
   setOutput("triage-json", JSON.stringify(results));
 }
 async function processIssue(octokit, issueNumber, inputs, command, forcedCommentId) {
   info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
   const issue2 = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
+  if (shouldSkipSweepIssueAuthor(inputs, command, issue2)) {
+    info(`Skipping issue #${issue2.number} during sweep because it was created by trusted ${issue2.authorAssociation} author ${issue2.author}.`);
+    return {
+      conclusion: "skipped trusted author issue",
+      labels: issue2.labels,
+      commentUrl: "",
+      triageJson: JSON.stringify({ skipped: true, reason: "trusted-author", author: issue2.author, authorAssociation: issue2.authorAssociation }),
+      closed: false
+    };
+  }
   const snapshotHash = computeIssueSnapshotHash(issue2, inputs.commentMarker, issueSnapshotHashOptions(inputs));
   const previousSnapshot = findWatcherSnapshot(issue2, inputs.commentMarker);
   if (shouldSkipUnchangedIssue(inputs, command, previousSnapshot.hash, snapshotHash)) {
@@ -26645,6 +26660,12 @@ function shouldSkipUnchangedIssue(inputs, command, previousHash, snapshotHash) {
   if (command.command) return false;
   return inputs.mode === "auto" || inputs.mode === "triage" || inputs.mode === "investigate" || inputs.mode === "sweep";
 }
+function shouldSkipSweepIssueAuthor(inputs, command, issue2) {
+  if (!inputs.skipSweepTrustedAuthors) return false;
+  if (inputs.mode !== "sweep") return false;
+  if (command.command) return false;
+  return TRUSTED_ASSOCIATIONS.has(issue2.authorAssociation.toUpperCase());
+}
 function issueSnapshotHashOptions(inputs) {
   return {
     managedLabelPrefix: inputs.managedLabelPrefix,
@@ -26656,6 +26677,7 @@ function issueSnapshotHashOptions(inputs) {
     validationCommand: inputs.validationCommand,
     reproductionCommand: inputs.reproductionCommand,
     requireReproduction: inputs.requireReproduction,
+    skipSweepTrustedAuthors: inputs.skipSweepTrustedAuthors,
     repoMemoryEnabled: inputs.repoMemoryEnabled,
     progressComments: inputs.progressComments
   };

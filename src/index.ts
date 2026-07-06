@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { replyToCommand } from './command-replies.js';
-import { resolveCommand, type CommandResolution } from './commands.js';
+import { resolveCommand, TRUSTED_ASSOCIATIONS, type CommandResolution } from './commands.js';
 import { buildSecurityComment, buildStatusComment, buildTriageComment } from './comment.js';
 import { reviewCommit } from './commit-review.js';
 import { assessDuplicate } from './duplicate-detector.js';
@@ -180,7 +180,9 @@ async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
   for (const [index, issueNumber] of issueNumbers.entries()) {
     const itemInputs = { ...inputs, allowFix: inputs.allowFix && index < inputs.maxSweepFixItems, allowClose: false };
     try {
-      results.push(await processIssue(octokit, issueNumber, itemInputs, { shouldRun: true }));
+      const result = await processIssue(octokit, issueNumber, itemInputs, { shouldRun: true });
+      results.push(result);
+      if (result.conclusion === 'skipped trusted author issue') skipped += 1;
     } catch (error) {
       if (error instanceof Error && /Pi call budget exhausted/.test(error.message)) {
         skipped += 1;
@@ -191,7 +193,7 @@ async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
     }
   }
 
-  core.setOutput('conclusion', `swept ${results.length} issue(s), skipped ${skipped}`);
+  core.setOutput('conclusion', `swept ${results.length - skipped} issue(s), skipped ${skipped}`);
   core.setOutput('triage-json', JSON.stringify(results));
 }
 
@@ -199,6 +201,17 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   core.info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
 
   const issue = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
+  if (shouldSkipSweepIssueAuthor(inputs, command, issue)) {
+    core.info(`Skipping issue #${issue.number} during sweep because it was created by trusted ${issue.authorAssociation} author ${issue.author}.`);
+    return {
+      conclusion: 'skipped trusted author issue',
+      labels: issue.labels,
+      commentUrl: '',
+      triageJson: JSON.stringify({ skipped: true, reason: 'trusted-author', author: issue.author, authorAssociation: issue.authorAssociation }),
+      closed: false,
+    };
+  }
+
   const snapshotHash = computeIssueSnapshotHash(issue, inputs.commentMarker, issueSnapshotHashOptions(inputs));
   const previousSnapshot = findWatcherSnapshot(issue, inputs.commentMarker);
   if (shouldSkipUnchangedIssue(inputs, command, previousSnapshot.hash, snapshotHash)) {
@@ -465,6 +478,13 @@ function shouldSkipUnchangedIssue(inputs: ActionInputs, command: CommandResoluti
   return inputs.mode === 'auto' || inputs.mode === 'triage' || inputs.mode === 'investigate' || inputs.mode === 'sweep';
 }
 
+function shouldSkipSweepIssueAuthor(inputs: ActionInputs, command: CommandResolution, issue: IssueSnapshot): boolean {
+  if (!inputs.skipSweepTrustedAuthors) return false;
+  if (inputs.mode !== 'sweep') return false;
+  if (command.command) return false;
+  return TRUSTED_ASSOCIATIONS.has(issue.authorAssociation.toUpperCase());
+}
+
 function issueSnapshotHashOptions(inputs: ActionInputs) {
   return {
     managedLabelPrefix: inputs.managedLabelPrefix,
@@ -476,6 +496,7 @@ function issueSnapshotHashOptions(inputs: ActionInputs) {
     validationCommand: inputs.validationCommand,
     reproductionCommand: inputs.reproductionCommand,
     requireReproduction: inputs.requireReproduction,
+    skipSweepTrustedAuthors: inputs.skipSweepTrustedAuthors,
     repoMemoryEnabled: inputs.repoMemoryEnabled,
     progressComments: inputs.progressComments,
   };

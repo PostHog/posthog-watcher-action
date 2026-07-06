@@ -26,7 +26,7 @@ export interface CommandResolution {
   reason?: string;
 }
 
-const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+export const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 export function resolveCommand(): CommandResolution {
   if (github.context.eventName === 'pull_request_review_comment') {

@@ -51,6 +51,7 @@ export async function getIssueSnapshot(octokit: Octokit, issueNumber: number, ma
     title: issue.title,
     body: issue.body ?? '',
     author: issue.user?.login ?? 'unknown',
+    authorAssociation: issue.author_association ?? 'NONE',
     url: issue.html_url,
     labels: issue.labels.map((label: string | { name?: string | null }) => (typeof label === 'string' ? label : label.name ?? '')).filter(Boolean),
     comments: selectedComments.map((comment: { user?: { login?: string } | null; body?: string | null; html_url: string; created_at: string }) => ({

@@ -8,6 +8,7 @@ export interface IssueSnapshot {
   title: string;
   body: string;
   author: string;
+  authorAssociation: string;
   url: string;
   labels: string[];
   comments: Array<{
