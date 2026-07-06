@@ -1064,14 +1064,14 @@ var require_util = __commonJS({
         }
         const port = url.port != null ? url.port : url.protocol === "https:" ? 443 : 80;
         let origin = url.origin != null ? url.origin : `${url.protocol || ""}//${url.hostname || ""}:${port}`;
-        let path3 = url.path != null ? url.path : `${url.pathname || ""}${url.search || ""}`;
+        let path4 = url.path != null ? url.path : `${url.pathname || ""}${url.search || ""}`;
         if (origin[origin.length - 1] === "/") {
           origin = origin.slice(0, origin.length - 1);
         }
-        if (path3 && path3[0] !== "/") {
-          path3 = `/${path3}`;
+        if (path4 && path4[0] !== "/") {
+          path4 = `/${path4}`;
         }
-        return new URL(`${origin}${path3}`);
+        return new URL(`${origin}${path4}`);
       }
       if (!isHttpOrHttpsPrefixed(url.origin || url.protocol)) {
         throw new InvalidArgumentError("Invalid URL protocol: the URL must start with `http:` or `https:`.");
@@ -1522,39 +1522,39 @@ var require_diagnostics = __commonJS({
       });
       diagnosticsChannel.channel("undici:client:sendHeaders").subscribe((evt) => {
         const {
-          request: { method, path: path3, origin }
+          request: { method, path: path4, origin }
         } = evt;
-        debuglog("sending request to %s %s/%s", method, origin, path3);
+        debuglog("sending request to %s %s/%s", method, origin, path4);
       });
       diagnosticsChannel.channel("undici:request:headers").subscribe((evt) => {
         const {
-          request: { method, path: path3, origin },
+          request: { method, path: path4, origin },
           response: { statusCode }
         } = evt;
         debuglog(
           "received response to %s %s/%s - HTTP %d",
           method,
           origin,
-          path3,
+          path4,
           statusCode
         );
       });
       diagnosticsChannel.channel("undici:request:trailers").subscribe((evt) => {
         const {
-          request: { method, path: path3, origin }
+          request: { method, path: path4, origin }
         } = evt;
-        debuglog("trailers received from %s %s/%s", method, origin, path3);
+        debuglog("trailers received from %s %s/%s", method, origin, path4);
       });
       diagnosticsChannel.channel("undici:request:error").subscribe((evt) => {
         const {
-          request: { method, path: path3, origin },
+          request: { method, path: path4, origin },
           error: error2
         } = evt;
         debuglog(
           "request to %s %s/%s errored - %s",
           method,
           origin,
-          path3,
+          path4,
           error2.message
         );
       });
@@ -1603,9 +1603,9 @@ var require_diagnostics = __commonJS({
         });
         diagnosticsChannel.channel("undici:client:sendHeaders").subscribe((evt) => {
           const {
-            request: { method, path: path3, origin }
+            request: { method, path: path4, origin }
           } = evt;
-          debuglog("sending request to %s %s/%s", method, origin, path3);
+          debuglog("sending request to %s %s/%s", method, origin, path4);
         });
       }
       diagnosticsChannel.channel("undici:websocket:open").subscribe((evt) => {
@@ -1668,7 +1668,7 @@ var require_request = __commonJS({
     var kHandler = /* @__PURE__ */ Symbol("handler");
     var Request = class {
       constructor(origin, {
-        path: path3,
+        path: path4,
         method,
         body,
         headers,
@@ -1683,11 +1683,11 @@ var require_request = __commonJS({
         expectContinue,
         servername
       }, handler2) {
-        if (typeof path3 !== "string") {
+        if (typeof path4 !== "string") {
           throw new InvalidArgumentError("path must be a string");
-        } else if (path3[0] !== "/" && !(path3.startsWith("http://") || path3.startsWith("https://")) && method !== "CONNECT") {
+        } else if (path4[0] !== "/" && !(path4.startsWith("http://") || path4.startsWith("https://")) && method !== "CONNECT") {
           throw new InvalidArgumentError("path must be an absolute URL or start with a slash");
-        } else if (invalidPathRegex.test(path3)) {
+        } else if (invalidPathRegex.test(path4)) {
           throw new InvalidArgumentError("invalid request path");
         }
         if (typeof method !== "string") {
@@ -1753,7 +1753,7 @@ var require_request = __commonJS({
         this.completed = false;
         this.aborted = false;
         this.upgrade = upgrade || null;
-        this.path = query ? buildURL(path3, query) : path3;
+        this.path = query ? buildURL(path4, query) : path4;
         this.origin = origin;
         this.idempotent = idempotent == null ? method === "HEAD" || method === "GET" : idempotent;
         this.blocking = blocking == null ? false : blocking;
@@ -6375,7 +6375,7 @@ var require_client_h1 = __commonJS({
       return method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && method !== "TRACE" && method !== "CONNECT";
     }
     function writeH1(client, request2) {
-      const { method, path: path3, host, upgrade, blocking, reset } = request2;
+      const { method, path: path4, host, upgrade, blocking, reset } = request2;
       let { body, headers, contentLength } = request2;
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH" || method === "QUERY" || method === "PROPFIND" || method === "PROPPATCH";
       if (util.isFormDataLike(body)) {
@@ -6442,7 +6442,7 @@ var require_client_h1 = __commonJS({
       if (blocking) {
         socket[kBlocking] = true;
       }
-      let header = `${method} ${path3} HTTP/1.1\r
+      let header = `${method} ${path4} HTTP/1.1\r
 `;
       if (typeof host === "string") {
         header += `host: ${host}\r
@@ -6968,7 +6968,7 @@ var require_client_h2 = __commonJS({
     }
     function writeH2(client, request2) {
       const session = client[kHTTP2Session];
-      const { method, path: path3, host, upgrade, expectContinue, signal, headers: reqHeaders } = request2;
+      const { method, path: path4, host, upgrade, expectContinue, signal, headers: reqHeaders } = request2;
       let { body } = request2;
       if (upgrade) {
         util.errorRequest(client, request2, new Error("Upgrade not supported for H2"));
@@ -7035,7 +7035,7 @@ var require_client_h2 = __commonJS({
         });
         return true;
       }
-      headers[HTTP2_HEADER_PATH] = path3;
+      headers[HTTP2_HEADER_PATH] = path4;
       headers[HTTP2_HEADER_SCHEME] = "https";
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH";
       if (body && typeof body.read === "function") {
@@ -7388,9 +7388,9 @@ var require_redirect_handler = __commonJS({
           return this.handler.onHeaders(statusCode, headers, resume, statusText);
         }
         const { origin, pathname, search } = util.parseURL(new URL(this.location, this.opts.origin && new URL(this.opts.path, this.opts.origin)));
-        const path3 = search ? `${pathname}${search}` : pathname;
+        const path4 = search ? `${pathname}${search}` : pathname;
         this.opts.headers = cleanRequestHeaders(this.opts.headers, statusCode === 303, this.opts.origin !== origin);
-        this.opts.path = path3;
+        this.opts.path = path4;
         this.opts.origin = origin;
         this.opts.maxRedirections = 0;
         this.opts.query = null;
@@ -8625,10 +8625,10 @@ var require_proxy_agent = __commonJS({
         };
         const {
           origin,
-          path: path3 = "/",
+          path: path4 = "/",
           headers = {}
         } = opts;
-        opts.path = origin + path3;
+        opts.path = origin + path4;
         if (!("host" in headers) && !("Host" in headers)) {
           const { host } = new URL2(origin);
           headers.host = host;
@@ -10549,20 +10549,20 @@ var require_mock_utils = __commonJS({
       }
       return true;
     }
-    function safeUrl(path3) {
-      if (typeof path3 !== "string") {
-        return path3;
+    function safeUrl(path4) {
+      if (typeof path4 !== "string") {
+        return path4;
       }
-      const pathSegments = path3.split("?");
+      const pathSegments = path4.split("?");
       if (pathSegments.length !== 2) {
-        return path3;
+        return path4;
       }
       const qp = new URLSearchParams(pathSegments.pop());
       qp.sort();
       return [...pathSegments, qp.toString()].join("?");
     }
-    function matchKey(mockDispatch2, { path: path3, method, body, headers }) {
-      const pathMatch = matchValue(mockDispatch2.path, path3);
+    function matchKey(mockDispatch2, { path: path4, method, body, headers }) {
+      const pathMatch = matchValue(mockDispatch2.path, path4);
       const methodMatch = matchValue(mockDispatch2.method, method);
       const bodyMatch = typeof mockDispatch2.body !== "undefined" ? matchValue(mockDispatch2.body, body) : true;
       const headersMatch = matchHeaders(mockDispatch2, headers);
@@ -10584,7 +10584,7 @@ var require_mock_utils = __commonJS({
     function getMockDispatch(mockDispatches, key) {
       const basePath = key.query ? buildURL(key.path, key.query) : key.path;
       const resolvedPath = typeof basePath === "string" ? safeUrl(basePath) : basePath;
-      let matchedMockDispatches = mockDispatches.filter(({ consumed }) => !consumed).filter(({ path: path3 }) => matchValue(safeUrl(path3), resolvedPath));
+      let matchedMockDispatches = mockDispatches.filter(({ consumed }) => !consumed).filter(({ path: path4 }) => matchValue(safeUrl(path4), resolvedPath));
       if (matchedMockDispatches.length === 0) {
         throw new MockNotMatchedError(`Mock dispatch not matched for path '${resolvedPath}'`);
       }
@@ -10622,9 +10622,9 @@ var require_mock_utils = __commonJS({
       }
     }
     function buildKey(opts) {
-      const { path: path3, method, body, headers, query } = opts;
+      const { path: path4, method, body, headers, query } = opts;
       return {
-        path: path3,
+        path: path4,
         method,
         body,
         headers,
@@ -11087,10 +11087,10 @@ var require_pending_interceptors_formatter = __commonJS({
       }
       format(pendingInterceptors) {
         const withPrettyHeaders = pendingInterceptors.map(
-          ({ method, path: path3, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
+          ({ method, path: path4, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
             Method: method,
             Origin: origin,
-            Path: path3,
+            Path: path4,
             "Status code": statusCode,
             Persistent: persist ? PERSISTENT : NOT_PERSISTENT,
             Invocations: timesInvoked,
@@ -11503,10 +11503,10 @@ var require_dns = __commonJS({
               return;
             }
             this.setRecords(origin, addresses);
-            const records = this.#records.get(origin.hostname);
+            const records2 = this.#records.get(origin.hostname);
             const ip = this.pick(
               origin,
-              records,
+              records2,
               newOpts.affinity
             );
             let port;
@@ -11569,7 +11569,7 @@ var require_dns = __commonJS({
       }
       #defaultPick(origin, hostnameRecords, affinity) {
         let ip = null;
-        const { records, offset } = hostnameRecords;
+        const { records: records2, offset } = hostnameRecords;
         let family;
         if (this.dualStack) {
           if (affinity == null) {
@@ -11581,13 +11581,13 @@ var require_dns = __commonJS({
               affinity = (hostnameRecords.offset & 1) === 1 ? 6 : 4;
             }
           }
-          if (records[affinity] != null && records[affinity].ips.length > 0) {
-            family = records[affinity];
+          if (records2[affinity] != null && records2[affinity].ips.length > 0) {
+            family = records2[affinity];
           } else {
-            family = records[affinity === 4 ? 6 : 4];
+            family = records2[affinity === 4 ? 6 : 4];
           }
         } else {
-          family = records[affinity];
+          family = records2[affinity];
         }
         if (family == null || family.ips.length === 0) {
           return ip;
@@ -11610,7 +11610,7 @@ var require_dns = __commonJS({
       }
       setRecords(origin, addresses) {
         const timestamp = Date.now();
-        const records = { records: { 4: null, 6: null } };
+        const records2 = { records: { 4: null, 6: null } };
         for (const record of addresses) {
           record.timestamp = timestamp;
           if (typeof record.ttl === "number") {
@@ -11618,11 +11618,11 @@ var require_dns = __commonJS({
           } else {
             record.ttl = this.#maxTTL;
           }
-          const familyRecords = records.records[record.family] ?? { ips: [] };
+          const familyRecords = records2.records[record.family] ?? { ips: [] };
           familyRecords.ips.push(record);
-          records.records[record.family] = familyRecords;
+          records2.records[record.family] = familyRecords;
         }
-        this.#records.set(origin.hostname, records);
+        this.#records.set(origin.hostname, records2);
       }
       getHandler(meta, opts) {
         return new DNSDispatchHandler(this, meta, opts);
@@ -15971,9 +15971,9 @@ var require_util6 = __commonJS({
         }
       }
     }
-    function validateCookiePath(path3) {
-      for (let i = 0; i < path3.length; ++i) {
-        const code = path3.charCodeAt(i);
+    function validateCookiePath(path4) {
+      for (let i = 0; i < path4.length; ++i) {
+        const code = path4.charCodeAt(i);
         if (code < 32 || // exclude CTLs (0-31)
         code === 127 || // DEL
         code === 59) {
@@ -18666,11 +18666,11 @@ var require_undici = __commonJS({
           if (typeof opts.path !== "string") {
             throw new InvalidArgumentError("invalid opts.path");
           }
-          let path3 = opts.path;
+          let path4 = opts.path;
           if (!opts.path.startsWith("/")) {
-            path3 = `/${path3}`;
+            path4 = `/${path4}`;
           }
-          url = new URL(util.parseOrigin(url).origin + path3);
+          url = new URL(util.parseOrigin(url).origin + path4);
         } else {
           if (!opts) {
             opts = typeof url === "object" ? url : {};
@@ -20160,8 +20160,8 @@ var Context = class {
       if ((0, import_fs2.existsSync)(process.env.GITHUB_EVENT_PATH)) {
         this.payload = JSON.parse((0, import_fs2.readFileSync)(process.env.GITHUB_EVENT_PATH, { encoding: "utf8" }));
       } else {
-        const path3 = process.env.GITHUB_EVENT_PATH;
-        process.stdout.write(`GITHUB_EVENT_PATH ${path3} does not exist${import_os3.EOL}`);
+        const path4 = process.env.GITHUB_EVENT_PATH;
+        process.stdout.write(`GITHUB_EVENT_PATH ${path4} does not exist${import_os3.EOL}`);
       }
     }
     this.eventName = process.env.GITHUB_EVENT_NAME;
@@ -24064,8 +24064,181 @@ function defaultBranch() {
   return payload.repository?.default_branch ?? "main";
 }
 
-// src/pi-runner.ts
+// src/pi-sessions.ts
+var import_promises = require("node:fs/promises");
+var import_node_os = __toESM(require("node:os"));
 var import_node_path = __toESM(require("node:path"));
+var sessionRoot = import_node_path.default.join(import_node_os.default.tmpdir(), "posthog-watcher-pi-sessions");
+var records = [];
+var recordedPaths = /* @__PURE__ */ new Set();
+async function beginPiSessionCapture(inputs, callNumber) {
+  if (!inputs.piSessionSharing) {
+    return { enabled: false, args: ["--no-session"], callNumber, before: /* @__PURE__ */ new Set() };
+  }
+  await (0, import_promises.mkdir)(sessionRoot, { recursive: true });
+  return {
+    enabled: true,
+    args: ["--session-dir", sessionRoot, "--name", `posthog-watcher call ${callNumber}`],
+    callNumber,
+    before: new Set(await listSessionFiles())
+  };
+}
+async function finishPiSessionCapture(capture) {
+  if (!capture.enabled) return;
+  const after = await listSessionFiles();
+  for (const file of after) {
+    if (capture.before.has(file) || recordedPaths.has(file)) continue;
+    recordedPaths.add(file);
+    records.push({ callNumber: capture.callNumber, path: file });
+  }
+}
+function piSessionRecordCount() {
+  return records.length;
+}
+async function publishPiSessionFiles(octokit, inputs, subject, startIndex) {
+  if (!inputs.piSessionSharing || inputs.dryRun) return void 0;
+  const selected = records.slice(startIndex);
+  if (!selected.length) return void 0;
+  const state = stateRepository(inputs);
+  await ensureBranch(octokit, state.owner, state.repo, inputs.stateBranch);
+  const source = context2.repo;
+  const basePath = `pi-sessions/${safePathPart(`${source.owner}-${source.repo}`)}/${safePathPart(subject)}/run-${context2.runId}-${startIndex + 1}`;
+  const files = [];
+  for (const [index, record] of selected.entries()) {
+    const name = safePathPart(`call-${record.callNumber}-${index + 1}-${import_node_path.default.basename(record.path)}`);
+    const filePath = `${basePath}/${name}`;
+    const content = await (0, import_promises.readFile)(record.path, "utf8");
+    await upsertFile(octokit, state.owner, state.repo, inputs.stateBranch, filePath, content, `Save pi session for ${subject}`);
+    files.push({ name, url: blobUrl(state.owner, state.repo, inputs.stateBranch, filePath) });
+  }
+  const readmePath = `${basePath}/README.md`;
+  await upsertFile(octokit, state.owner, state.repo, inputs.stateBranch, readmePath, renderReadme(source.owner, source.repo, files), `Document pi session for ${subject}`);
+  info(`Saved ${files.length} pi session file(s) to ${state.owner}/${state.repo}@${inputs.stateBranch}:${basePath}.`);
+  return { branch: inputs.stateBranch, files };
+}
+function formatPiSessionMarkdown(reference) {
+  if (!reference) return "";
+  const fileList = reference.files.map((file) => `- [\`${file.name}\`](${file.url})`).join("\n");
+  return `### Pi session
+
+The JSONL pi session file(s) for this run were saved to the \`${reference.branch}\` branch. Download one locally, then fork it into your own pi session:
+
+\`\`\`bash
+pi --fork path/to/session.jsonl
+\`\`\`
+
+Saved session files:
+${fileList}
+`;
+}
+async function listSessionFiles(dir = sessionRoot) {
+  try {
+    const entries = await (0, import_promises.readdir)(dir, { withFileTypes: true });
+    const files = await Promise.all(entries.map(async (entry) => {
+      const entryPath = import_node_path.default.join(dir, entry.name);
+      if (entry.isDirectory()) return listSessionFiles(entryPath);
+      if (entry.isFile() && entry.name.endsWith(".jsonl")) return [entryPath];
+      return [];
+    }));
+    return files.flat().sort();
+  } catch (error2) {
+    if (await isMissing(dir)) return [];
+    throw error2;
+  }
+}
+async function isMissing(filePath) {
+  try {
+    await (0, import_promises.stat)(filePath);
+    return false;
+  } catch (error2) {
+    return typeof error2 === "object" && error2 !== null && "code" in error2 && error2.code === "ENOENT";
+  }
+}
+function stateRepository(inputs) {
+  if (inputs.stateRepo) {
+    const [owner, repo] = inputs.stateRepo.split("/");
+    if (!owner || !repo) throw new Error("state-repo must be in owner/repo format");
+    return { owner, repo };
+  }
+  return context2.repo;
+}
+async function ensureBranch(octokit, owner, repo, branch) {
+  try {
+    await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+    return;
+  } catch {
+    const repoInfo = await octokit.rest.repos.get({ owner, repo });
+    const base = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${repoInfo.data.default_branch}` });
+    await octokit.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: base.data.object.sha }).catch(async (error2) => {
+      if (isConflictLike(error2)) {
+        await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+        return;
+      }
+      throw error2;
+    });
+  }
+}
+async function upsertFile(octokit, owner, repo, branch, filePath, content, message) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    let sha;
+    try {
+      const existing = await octokit.rest.repos.getContent({ owner, repo, path: filePath, ref: branch });
+      if (!Array.isArray(existing.data) && existing.data.type === "file") sha = existing.data.sha;
+    } catch (error2) {
+      debug(`Pi session file ${filePath} does not exist yet or branch is missing: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    }
+    try {
+      await octokit.rest.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path: filePath,
+        branch,
+        message,
+        content: Buffer.from(content).toString("base64"),
+        sha
+      });
+      return;
+    } catch (error2) {
+      if (attempt === 3 || !isConflictLike(error2)) throw error2;
+      await sleep(250 * attempt);
+    }
+  }
+}
+function renderReadme(owner, repo, files) {
+  const fileList = files.map((file) => `- [\`${file.name}\`](${file.url})`).join("\n");
+  return `# PostHog Watcher pi sessions
+
+These JSONL files are pi sessions captured from posthog-watcher-action.
+
+To resume locally, download a session file, check out the relevant repository, then fork the session:
+
+\`\`\`bash
+gh repo clone ${owner}/${repo}
+cd ${repo}
+pi --fork path/to/session.jsonl
+\`\`\`
+
+Use \`--fork\` rather than \`--session\` when taking over a CI-generated session so your local work continues in a new session file.
+
+Saved session files:
+${fileList}
+`;
+}
+function blobUrl(owner, repo, branch, filePath) {
+  return `https://github.com/${owner}/${repo}/blob/${encodeURIComponent(branch)}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
+}
+function safePathPart(value) {
+  return value.replace(/[^a-zA-Z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 180) || "pi-session";
+}
+function isConflictLike(error2) {
+  return Boolean(error2 && typeof error2 === "object" && "status" in error2 && (error2.status === 409 || error2.status === 422));
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// src/pi-runner.ts
+var import_node_path2 = __toESM(require("node:path"));
 
 // src/git.ts
 var import_node_child_process = require("node:child_process");
@@ -24162,7 +24335,7 @@ async function runPi(options) {
     const callNumber = consumePiCall(options.inputs, options.requireText === false ? "repair/review run" : "triage run");
     info(`Running pi call ${callNumber}/${options.inputs.maxPiCalls} with model ${options.inputs.model} and tools ${options.tools.join(",")}${attempts > 1 ? ` (attempt ${attempt}/${attempts})` : ""}`);
     try {
-      return await runPiOnce(options);
+      return await runPiOnce(options, callNumber);
     } catch (error2) {
       lastError = error2 instanceof Error ? error2 : new Error(String(error2));
       if (attempt >= attempts) break;
@@ -24174,8 +24347,9 @@ async function runPi(options) {
 function firstLine(value) {
   return value.split("\n")[0] ?? value;
 }
-async function runPiOnce(options) {
-  const skillPath = import_node_path.default.join(import_node_path.default.resolve(__dirname, ".."), "skills", "karpathy-guidelines", "SKILL.md");
+async function runPiOnce(options, callNumber) {
+  const skillPath = import_node_path2.default.join(import_node_path2.default.resolve(__dirname, ".."), "skills", "karpathy-guidelines", "SKILL.md");
+  const sessionCapture = await beginPiSessionCapture(options.inputs, callNumber);
   const args = [
     "--yes",
     "--package",
@@ -24184,7 +24358,7 @@ async function runPiOnce(options) {
     ...options.inputs.approveProjectResources ? ["--approve"] : [],
     "--mode",
     "json",
-    "--no-session",
+    ...sessionCapture.args,
     "--no-extensions",
     "--no-prompt-templates",
     "--skill",
@@ -24199,6 +24373,7 @@ async function runPiOnce(options) {
   ];
   const env = sanitizedEnv(options.inputs.openaiApiKey);
   const result = await runCommandStatus("npx", args, { cwd: options.cwd ?? process.cwd(), env, timeoutMs: options.inputs.piTimeoutMs });
+  await finishPiSessionCapture(sessionCapture);
   if (result.stderr.trim()) debug(result.stderr.trim());
   if (result.code !== 0) {
     throw new Error(`pi exited with code ${result.code}.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs.openaiApiKey, options.inputs.githubToken)}`);
@@ -24381,6 +24556,7 @@ async function replyToCommand(octokit, issueNumber, inputs, command, questionOve
   const branch = `posthog-watcher/issue-${issueNumber}`;
   const existingPr = await findOpenPullRequestForBranch(octokit, branch);
   const marker = `${inputs.commentMarker} command:${command}`;
+  const piSessionStartIndex = piSessionRecordCount();
   let body = `${marker}
 
 ## PostHog Watcher ${command}
@@ -24429,6 +24605,10 @@ ${question}
       body += answer;
     }
   }
+  const piSessionMarkdown = formatPiSessionMarkdown(await publishPiSessionFiles(octokit, inputs, `${command}-${issueNumber}`, piSessionStartIndex));
+  if (piSessionMarkdown) body += `
+
+${piSessionMarkdown}`;
   body = redactSecrets(body, [inputs.openaiApiKey, inputs.githubToken]);
   const commentUrl = inputs.dryRun ? "" : await upsertIssueComment(octokit, issueNumber, marker, body);
   return { conclusion: `${command} replied`, commentUrl };
@@ -24553,7 +24733,7 @@ Suggested labels: ${labels.length ? labels.map((label) => `\`${label}\``).join("
 _Generated by posthog-watcher-action using deterministic security policy._
 `;
 }
-function buildTriageComment(marker, issue2, triage, labels, prUrl, fixBlockedReason, snapshotHash, attentionMention) {
+function buildTriageComment(marker, issue2, triage, labels, prUrl, fixBlockedReason, snapshotHash, attentionMention, piSessionMarkdown) {
   const findings = triage.investigation.findings.length ? triage.investigation.findings.map((finding) => `- ${finding}`).join("\n") : "- No concrete findings yet.";
   const relevantFiles = triage.investigation.relevantFiles.length ? triage.investigation.relevantFiles.map((file) => `\`${file}\``).join(", ") : "_None identified._";
   return `${marker}
@@ -24585,6 +24765,8 @@ ${triage.fix.suggestedApproach ? `- Suggested approach: ${triage.fix.suggestedAp
 Draft PR: ${prUrl}
 ` : ""}${fixBlockedReason ? `
 Fix PR skipped: ${fixBlockedReason}
+` : ""}${piSessionMarkdown ? `
+${piSessionMarkdown}
 ` : ""}
 ### Close proposal
 
@@ -24815,7 +24997,7 @@ function titleTokens(title) {
 }
 
 // src/fix-runner.ts
-var import_promises2 = require("node:fs/promises");
+var import_promises3 = require("node:fs/promises");
 
 // src/issue-context.ts
 function formatIssuePrompt(issue2, allowedLabels, mode, relatedItems, repoMemory = "") {
@@ -25252,8 +25434,8 @@ async function runValidation(inputs, env) {
 }
 
 // src/signed-commit.ts
-var import_promises = require("node:fs/promises");
-var import_node_path2 = __toESM(require("node:path"));
+var import_promises2 = require("node:fs/promises");
+var import_node_path3 = __toESM(require("node:path"));
 async function commitChangesWithGitHubSignature(octokit, options) {
   const cwd = options.cwd ?? process.cwd();
   const changes = await collectWorkingTreeChanges(cwd);
@@ -25302,7 +25484,7 @@ async function collectWorkingTreeChanges(cwd) {
   for (const entry of entries) {
     if (entry.deletePath) deletions.push({ path: entry.deletePath });
     if (entry.addPath) {
-      const contents = await (0, import_promises.readFile)(import_node_path2.default.join(cwd, entry.addPath));
+      const contents = await (0, import_promises2.readFile)(import_node_path3.default.join(cwd, entry.addPath));
       additions.push({ path: entry.addPath, contents: contents.toString("base64") });
     }
   }
@@ -25413,7 +25595,7 @@ function shouldAttemptFix(triage, inputs) {
 }
 async function readPullRequestTemplate() {
   try {
-    return await (0, import_promises2.readFile)(".github/pull_request_template.md", "utf8");
+    return await (0, import_promises3.readFile)(".github/pull_request_template.md", "utf8");
   } catch (error2) {
     if (isNotFoundError(error2)) return void 0;
     throw error2;
@@ -25495,6 +25677,7 @@ function getInputs() {
     stateEnabled: parseBoolean(getInput("state-enabled")),
     repoMemoryEnabled: parseBoolean(getInput("repo-memory-enabled") || "true"),
     progressComments: parseBoolean(getInput("progress-comments") || "true"),
+    piSessionSharing: parseBoolean(getInput("pi-session-sharing")),
     stateRepo: getInput("state-repo"),
     stateBranch: getInput("state-branch") || "posthog-watcher-state",
     commentMarker: getInput("comment-marker") || "<!-- posthog-watcher-action -->",
@@ -25590,9 +25773,9 @@ async function enqueueCurrentPayload(octokit, inputs, command) {
   });
 }
 async function readQueue(octokit, inputs) {
-  const { owner, repo } = stateRepository(inputs);
-  await ensureBranch(octokit, owner, repo, inputs.stateBranch);
-  return parseQueue(await readFile3(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH));
+  const { owner, repo } = stateRepository2(inputs);
+  await ensureBranch2(octokit, owner, repo, inputs.stateBranch);
+  return parseQueue(await readFile4(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH));
 }
 async function incrementQueueAttempt(octokit, inputs, id) {
   return mutateQueue(octokit, inputs, (queue) => {
@@ -25658,20 +25841,20 @@ function commandSourceKey(item) {
   return item.command ? item.source.commentId : void 0;
 }
 async function mutateQueue(octokit, inputs, mutate) {
-  const { owner, repo } = stateRepository(inputs);
-  await ensureBranch(octokit, owner, repo, inputs.stateBranch);
+  const { owner, repo } = stateRepository2(inputs);
+  await ensureBranch2(octokit, owner, repo, inputs.stateBranch);
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const currentFile = await readFileWithSha(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH);
     const current = parseQueue(currentFile?.content);
     const { queue, result } = mutate(current);
     try {
-      await upsertFile(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH, `${JSON.stringify(queue, null, 2)}
+      await upsertFile2(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH, `${JSON.stringify(queue, null, 2)}
 `, "Update posthog watcher queue", currentFile?.sha);
       return result;
     } catch (error2) {
-      if (attempt === 3 || !isConflictLike(error2)) throw error2;
+      if (attempt === 3 || !isConflictLike2(error2)) throw error2;
       warning(`Queue update conflict; retrying attempt ${attempt + 1}/3.`);
-      await sleep(250 * attempt);
+      await sleep2(250 * attempt);
     }
   }
   throw new Error("Queue update failed after retries");
@@ -25691,7 +25874,7 @@ function isQueueItem(item) {
   const candidate = item;
   return typeof candidate.id === "string" && (candidate.kind === "issue" || candidate.kind === "pull_request") && typeof candidate.number === "number" && typeof candidate.mode === "string";
 }
-function stateRepository(inputs) {
+function stateRepository2(inputs) {
   if (inputs.stateRepo) {
     const [owner, repo] = inputs.stateRepo.split("/");
     if (!owner || !repo) throw new Error("state-repo must be in owner/repo format");
@@ -25699,7 +25882,7 @@ function stateRepository(inputs) {
   }
   return context2.repo;
 }
-async function ensureBranch(octokit, owner, repo, branch) {
+async function ensureBranch2(octokit, owner, repo, branch) {
   try {
     await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
     return;
@@ -25707,7 +25890,7 @@ async function ensureBranch(octokit, owner, repo, branch) {
     const repoInfo = await octokit.rest.repos.get({ owner, repo });
     const base = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${repoInfo.data.default_branch}` });
     await octokit.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: base.data.object.sha }).catch(async (error2) => {
-      if (isConflictLike(error2)) {
+      if (isConflictLike2(error2)) {
         await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
         return;
       }
@@ -25715,12 +25898,12 @@ async function ensureBranch(octokit, owner, repo, branch) {
     });
   }
 }
-async function readFile3(octokit, owner, repo, branch, path3) {
-  return (await readFileWithSha(octokit, owner, repo, branch, path3))?.content;
+async function readFile4(octokit, owner, repo, branch, path4) {
+  return (await readFileWithSha(octokit, owner, repo, branch, path4))?.content;
 }
-async function readFileWithSha(octokit, owner, repo, branch, path3) {
+async function readFileWithSha(octokit, owner, repo, branch, path4) {
   try {
-    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path3, ref: branch });
+    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path4, ref: branch });
     if (!Array.isArray(existing.data) && existing.data.type === "file" && "content" in existing.data) {
       return { content: Buffer.from(existing.data.content, "base64").toString("utf8"), sha: existing.data.sha };
     }
@@ -25729,11 +25912,11 @@ async function readFileWithSha(octokit, owner, repo, branch, path3) {
   }
   return void 0;
 }
-async function upsertFile(octokit, owner, repo, branch, path3, content, message, sha) {
+async function upsertFile2(octokit, owner, repo, branch, path4, content, message, sha) {
   await octokit.rest.repos.createOrUpdateFileContents({
     owner,
     repo,
-    path: path3,
+    path: path4,
     branch,
     message,
     content: Buffer.from(content).toString("base64"),
@@ -25744,10 +25927,10 @@ function runUrl() {
   const { owner, repo } = context2.repo;
   return `https://github.com/${owner}/${repo}/actions/runs/${context2.runId}`;
 }
-function isConflictLike(error2) {
+function isConflictLike2(error2) {
   return Boolean(error2 && typeof error2 === "object" && "status" in error2 && (error2.status === 409 || error2.status === 422));
 }
-function sleep(ms) {
+function sleep2(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -26016,36 +26199,36 @@ function findWatcherSnapshot(issue2, commentMarker) {
 // src/state.ts
 async function readRepoMemory(octokit, inputs, owner, repo) {
   if (!inputs.stateEnabled || inputs.dryRun) return "";
-  const state = stateRepository2(inputs);
-  await ensureBranch2(octokit, state.owner, state.repo, inputs.stateBranch);
-  return truncateMemory(await readFile4(octokit, state.owner, state.repo, inputs.stateBranch, memoryPath(owner, repo)) ?? "");
+  const state = stateRepository3(inputs);
+  await ensureBranch3(octokit, state.owner, state.repo, inputs.stateBranch);
+  return truncateMemory(await readFile5(octokit, state.owner, state.repo, inputs.stateBranch, memoryPath(owner, repo)) ?? "");
 }
 async function appendRepoMemory(octokit, inputs, record) {
   if (!inputs.stateEnabled || inputs.dryRun) return;
-  const { owner, repo } = stateRepository2(inputs);
-  await ensureBranch2(octokit, owner, repo, inputs.stateBranch);
-  const path3 = memoryPath(record.owner, record.repo);
-  const current = await readFile4(octokit, owner, repo, inputs.stateBranch, path3);
+  const { owner, repo } = stateRepository3(inputs);
+  await ensureBranch3(octokit, owner, repo, inputs.stateBranch);
+  const path4 = memoryPath(record.owner, record.repo);
+  const current = await readFile5(octokit, owner, repo, inputs.stateBranch, path4);
   const next = truncateMemory(`${current?.trimEnd() || renderMemoryHeader(record)}
 
 ${renderMemoryEntry(record, inputs)}`);
-  await upsertFile2(octokit, owner, repo, inputs.stateBranch, path3, `${next}
+  await upsertFile3(octokit, owner, repo, inputs.stateBranch, path4, `${next}
 `, `Update watcher memory for ${record.owner}/${record.repo}`);
 }
 async function writeStateRecord(octokit, inputs, record) {
   if (!inputs.stateEnabled || inputs.dryRun) return;
-  const { owner, repo } = stateRepository2(inputs);
-  await ensureBranch2(octokit, owner, repo, inputs.stateBranch);
-  const path3 = `records/${record.owner}-${record.repo}/${record.kind}s/${record.numberOrSha}.md`;
+  const { owner, repo } = stateRepository3(inputs);
+  await ensureBranch3(octokit, owner, repo, inputs.stateBranch);
+  const path4 = `records/${record.owner}-${record.repo}/${record.kind}s/${record.numberOrSha}.md`;
   const body = renderRecord(record, inputs);
-  await upsertFile2(octokit, owner, repo, inputs.stateBranch, path3, body, `Update watcher state for ${record.kind} ${record.numberOrSha}`);
+  await upsertFile3(octokit, owner, repo, inputs.stateBranch, path4, body, `Update watcher state for ${record.kind} ${record.numberOrSha}`);
   const index = await readIndex(octokit, owner, repo, inputs.stateBranch);
   const entry = toDashboardEntry(record);
   index[entry.key] = entry;
   const sorted = Object.fromEntries(Object.entries(index).sort(([, left], [, right]) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 200));
-  await upsertFile2(octokit, owner, repo, inputs.stateBranch, "index.json", `${JSON.stringify(sorted, null, 2)}
+  await upsertFile3(octokit, owner, repo, inputs.stateBranch, "index.json", `${JSON.stringify(sorted, null, 2)}
 `, "Update watcher state index");
-  await upsertFile2(octokit, owner, repo, inputs.stateBranch, "dashboard.md", renderDashboard(sorted), "Update watcher dashboard");
+  await upsertFile3(octokit, owner, repo, inputs.stateBranch, "dashboard.md", renderDashboard(sorted), "Update watcher dashboard");
 }
 function memoryPath(owner, repo) {
   return `memory/${owner}-${repo}.md`;
@@ -26079,7 +26262,7 @@ function truncateMemory(content) {
 
 ${content.slice(-max)}` : content;
 }
-function stateRepository2(inputs) {
+function stateRepository3(inputs) {
   if (inputs.stateRepo) {
     const [owner, repo] = inputs.stateRepo.split("/");
     if (!owner || !repo) throw new Error("state-repo must be in owner/repo format");
@@ -26087,7 +26270,7 @@ function stateRepository2(inputs) {
   }
   return context2.repo;
 }
-async function ensureBranch2(octokit, owner, repo, branch) {
+async function ensureBranch3(octokit, owner, repo, branch) {
   try {
     await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
     return;
@@ -26095,7 +26278,7 @@ async function ensureBranch2(octokit, owner, repo, branch) {
     const repoInfo = await octokit.rest.repos.get({ owner, repo });
     const base = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${repoInfo.data.default_branch}` });
     await octokit.rest.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: base.data.object.sha }).catch(async (error2) => {
-      if (isConflictLike2(error2)) {
+      if (isConflictLike3(error2)) {
         await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
         return;
       }
@@ -26104,7 +26287,7 @@ async function ensureBranch2(octokit, owner, repo, branch) {
   }
 }
 async function readIndex(octokit, owner, repo, branch) {
-  const content = await readFile4(octokit, owner, repo, branch, "index.json");
+  const content = await readFile5(octokit, owner, repo, branch, "index.json");
   if (!content) return {};
   try {
     return JSON.parse(content);
@@ -26112,9 +26295,9 @@ async function readIndex(octokit, owner, repo, branch) {
     return {};
   }
 }
-async function readFile4(octokit, owner, repo, branch, path3) {
+async function readFile5(octokit, owner, repo, branch, path4) {
   try {
-    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path3, ref: branch });
+    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path4, ref: branch });
     if (!Array.isArray(existing.data) && existing.data.type === "file" && "content" in existing.data) {
       return Buffer.from(existing.data.content, "base64").toString("utf8");
     }
@@ -26123,20 +26306,20 @@ async function readFile4(octokit, owner, repo, branch, path3) {
   }
   return void 0;
 }
-async function upsertFile2(octokit, owner, repo, branch, path3, content, message) {
+async function upsertFile3(octokit, owner, repo, branch, path4, content, message) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     let sha;
     try {
-      const existing = await octokit.rest.repos.getContent({ owner, repo, path: path3, ref: branch });
+      const existing = await octokit.rest.repos.getContent({ owner, repo, path: path4, ref: branch });
       if (!Array.isArray(existing.data) && existing.data.type === "file") sha = existing.data.sha;
     } catch (error2) {
-      debug(`State file ${path3} does not exist yet or branch is missing: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      debug(`State file ${path4} does not exist yet or branch is missing: ${error2 instanceof Error ? error2.message : String(error2)}`);
     }
     try {
       await octokit.rest.repos.createOrUpdateFileContents({
         owner,
         repo,
-        path: path3,
+        path: path4,
         branch,
         message,
         content: Buffer.from(content).toString("base64"),
@@ -26144,8 +26327,8 @@ async function upsertFile2(octokit, owner, repo, branch, path3, content, message
       });
       return;
     } catch (error2) {
-      if (attempt === 3 || !isConflictLike2(error2)) throw error2;
-      await sleep2(250 * attempt);
+      if (attempt === 3 || !isConflictLike3(error2)) throw error2;
+      await sleep3(250 * attempt);
     }
   }
 }
@@ -26194,10 +26377,10 @@ function runUrl2() {
   const { owner, repo } = context2.repo;
   return `https://github.com/${owner}/${repo}/actions/runs/${context2.runId}`;
 }
-function isConflictLike2(error2) {
+function isConflictLike3(error2) {
   return Boolean(error2 && typeof error2 === "object" && "status" in error2 && (error2.status === 409 || error2.status === 422));
 }
-function sleep2(ms) {
+function sleep3(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -26418,6 +26601,7 @@ async function sweep(octokit, inputs) {
 }
 async function processIssue(octokit, issueNumber, inputs, command, forcedCommentId) {
   info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
+  const piSessionStartIndex = piSessionRecordCount();
   const issue2 = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
   if (shouldSkipSweepIssueAuthor(inputs, command, issue2)) {
     info(`Skipping issue #${issue2.number} during sweep because it was created by trusted ${issue2.authorAssociation} author ${issue2.author}.`);
@@ -26541,7 +26725,9 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
       closed = true;
     }
   }
-  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue2, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue2.owner)), [inputs.openaiApiKey, inputs.githubToken]);
+  const piSessionReference = await publishPiSessionFiles(octokit, inputs, `issue-${issue2.number}`, piSessionStartIndex);
+  const piSessionMarkdown = formatPiSessionMarkdown(piSessionReference);
+  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue2, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue2.owner), piSessionMarkdown), [inputs.openaiApiKey, inputs.githubToken]);
   let commentUrl = "";
   if (inputs.dryRun) {
     info(`[dry-run] Would upsert issue comment:
@@ -26560,7 +26746,7 @@ ${commentBody}`);
     url: issue2.url,
     prUrl,
     closed,
-    data: { triage, relatedItems, duplicate, security, fixBlocker, snapshotHash, command: command.command, piCalls: getPiCallCount(), runId: context2.runId, runUrl: runUrl3() }
+    data: { triage, relatedItems, duplicate, security, fixBlocker, snapshotHash, command: command.command, piCalls: getPiCallCount(), piSessionReference, runId: context2.runId, runUrl: runUrl3() }
   });
   if (inputs.repoMemoryEnabled) {
     await appendRepoMemory(octokit, inputs, {
@@ -26679,7 +26865,8 @@ function issueSnapshotHashOptions(inputs) {
     requireReproduction: inputs.requireReproduction,
     skipSweepTrustedAuthors: inputs.skipSweepTrustedAuthors,
     repoMemoryEnabled: inputs.repoMemoryEnabled,
-    progressComments: inputs.progressComments
+    progressComments: inputs.progressComments,
+    piSessionSharing: inputs.piSessionSharing
   };
 }
 function minimalSecurityTriage() {

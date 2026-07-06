@@ -167,6 +167,10 @@ inputs:
     description: Whether to update the marker-backed issue comment with in-progress phase/status updates
     required: false
     default: 'true'
+  pi-session-sharing:
+    description: Save captured pi JSONL session files to state-branch and link resume instructions from watcher comments
+    required: false
+    default: 'false'
   state-repo:
     description: Repository for durable state as owner/repo. Defaults to current repository.
     required: false
