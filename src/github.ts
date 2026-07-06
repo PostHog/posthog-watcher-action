@@ -180,13 +180,17 @@ export async function ensureTeamReviewRequested(octokit: Octokit, pullNumber: nu
     return;
   }
 
-  await octokit.rest.pulls.requestReviewers({
-    owner,
-    repo,
-    pull_number: pullNumber,
-    team_reviewers: [team.slug],
-  });
-  core.info(`Requested review from ${team.display} on PR #${pullNumber}.`);
+  try {
+    await octokit.rest.pulls.requestReviewers({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      team_reviewers: [team.slug],
+    });
+    core.info(`Requested review from ${team.display} on PR #${pullNumber}.`);
+  } catch (error) {
+    core.warning(`Could not request review from ${team.display} on ${owner}/${repo}#${pullNumber}: ${error instanceof Error ? error.message : String(error)}. If this is a private org team, use a github-token that can resolve and request reviews from that team.`);
+  }
 }
 
 function parseTeamReviewer(reviewTeam: string): TeamReviewer | undefined {

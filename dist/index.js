@@ -24030,13 +24030,17 @@ async function ensureTeamReviewRequested(octokit, pullNumber, reviewTeam) {
     info(`${team.display} is already requested on PR #${pullNumber}.`);
     return;
   }
-  await octokit.rest.pulls.requestReviewers({
-    owner,
-    repo,
-    pull_number: pullNumber,
-    team_reviewers: [team.slug]
-  });
-  info(`Requested review from ${team.display} on PR #${pullNumber}.`);
+  try {
+    await octokit.rest.pulls.requestReviewers({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      team_reviewers: [team.slug]
+    });
+    info(`Requested review from ${team.display} on PR #${pullNumber}.`);
+  } catch (error2) {
+    warning(`Could not request review from ${team.display} on ${owner}/${repo}#${pullNumber}: ${error2 instanceof Error ? error2.message : String(error2)}. If this is a private org team, use a github-token that can resolve and request reviews from that team.`);
+  }
 }
 function parseTeamReviewer(reviewTeam) {
   const normalized = reviewTeam.trim().replace(/^@/, "");
@@ -24741,19 +24745,19 @@ function tokens(value) {
 // src/fix-blocker.ts
 async function findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, duplicate) {
   if (duplicate.duplicate && duplicate.canonical) {
-    return `${duplicate.reason}: #${duplicate.canonical.number} ${duplicate.canonical.url}`;
+    return { reason: formatDuplicateReason(duplicate), blockingPullRequest: duplicate.blockingPr };
   }
   const relatedPullRequest = relatedItems.find(
     (item) => item.type === "pull_request" && item.state === "open" && (item.reason === "closing-pr" || item.reason === "title-search" && titleSimilarity(issue2.title, item.title) >= 0.3)
   );
   if (relatedPullRequest) {
-    return `An open related PR already appears to address this issue: #${relatedPullRequest.number} ${relatedPullRequest.url}`;
+    return { reason: `An open related PR already appears to address this issue: ${formatRelatedItemReference(relatedPullRequest)}`, blockingPullRequest: relatedPullRequest };
   }
   const olderDuplicateIssue = relatedItems.find(
     (item) => item.type === "issue" && item.state === "open" && item.number < issue2.number && item.reason === "title-search" && titleSimilarity(issue2.title, item.title) >= 0.3
   );
   if (olderDuplicateIssue) {
-    return `An older related issue appears to cover the same report: #${olderDuplicateIssue.number} ${olderDuplicateIssue.url}`;
+    return { reason: `An older related issue appears to cover the same report: ${formatRelatedItemReference(olderDuplicateIssue)}` };
   }
   if (triage.closeProposal.propose && (triage.closeProposal.category === "duplicate" || triage.closeProposal.category === "already-fixed") && triage.closeProposal.canonicalUrl) {
     const canonicalPullRequest = await getCanonicalPullRequest(octokit, triage.closeProposal.canonicalUrl);
@@ -24761,9 +24765,21 @@ async function findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, 
       info(`Triage proposed closed unmerged PR ${triage.closeProposal.canonicalUrl} as canonical; continuing fix attempt because it did not land.`);
       return void 0;
     }
-    return `Triage proposed this issue as ${triage.closeProposal.category} of ${triage.closeProposal.canonicalUrl}; skipping a duplicate fix PR.`;
+    return { reason: `Triage proposed this issue as ${triage.closeProposal.category} of ${triage.closeProposal.canonicalUrl}; skipping a duplicate fix PR.` };
   }
   return void 0;
+}
+function formatDuplicateReason(duplicate) {
+  if (!duplicate.canonical) return duplicate.reason;
+  const reference = formatRelatedItemReference(duplicate.canonical);
+  const plainReference = `#${duplicate.canonical.number}`;
+  if (duplicate.reason.includes(plainReference)) {
+    return duplicate.reason.replace(plainReference, reference);
+  }
+  return `${duplicate.reason}: ${reference}`;
+}
+function formatRelatedItemReference(item) {
+  return `[#${item.number}](${item.url})`;
 }
 async function getCanonicalPullRequest(octokit, url) {
   const parsed = parseGitHubPullRequestUrl(url);
@@ -26489,7 +26505,12 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
     for (const label of staleLabels) await removeLabel(octokit, issue2.number, label);
     await addLabels(octokit, issue2.number, allLabels);
   }
-  const fixBlocker = await findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, duplicate) ?? planCommandBlocker(command) ?? fixCommandBlocker(inputs, command) ?? featureFixBlocker(triage, inputs, command);
+  const preExistingFixBlocker = await findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, duplicate);
+  const commandFixBlocker = planCommandBlocker(command) ?? fixCommandBlocker(inputs, command) ?? featureFixBlocker(triage, inputs, command);
+  if (preExistingFixBlocker?.blockingPullRequest && !commandFixBlocker && shouldReportFixAttempt(triage, inputs)) {
+    await ensureBlockingPrTeamReviewRequested(octokit, inputs, preExistingFixBlocker.blockingPullRequest.number);
+  }
+  const fixBlocker = preExistingFixBlocker?.reason ?? commandFixBlocker;
   if (fixBlocker) info(`Skipping fix PR: ${fixBlocker}`);
   if (!security.sensitive && !fixBlocker && shouldReportFixAttempt(triage, inputs)) {
     await updateIssueStatus(octokit, inputs, issue2, "Attempting fix PR", "Running the guarded repair loop, validation, diff guardrails, and independent review gate.", sweepAttentionMention(inputs, issue2.owner));
@@ -26566,6 +26587,14 @@ function shouldReportFixAttempt(triage, inputs) {
   if (triage.confidence < 0.75) return false;
   if (triage.needsMoreInfo) return false;
   return triage.fix.risk === "low";
+}
+async function ensureBlockingPrTeamReviewRequested(octokit, inputs, pullNumber) {
+  if (!inputs.fixPrReviewTeam.trim()) return;
+  if (inputs.dryRun) {
+    info(`[dry-run] Would request review from ${inputs.fixPrReviewTeam} on existing related PR #${pullNumber}.`);
+    return;
+  }
+  await ensureTeamReviewRequested(octokit, pullNumber, inputs.fixPrReviewTeam);
 }
 function planCommandBlocker(command) {
   return command.command === "plan" ? "plan command requested a proposal only; no draft PR was opened" : void 0;
