@@ -40,9 +40,13 @@ inputs:
     required: false
     default: 'false'
   require-fix-command:
-    description: Require a trusted @posthog-watcher fix command before opening or updating fix PRs
+    description: Require a trusted watcher fix command before opening or updating fix PRs
     required: false
     default: 'false'
+  command-mention:
+    description: GitHub mention that triggers watcher issue-comment commands
+    required: false
+    default: '@posthog-watcher'
   block-feature-fixes:
     description: Require explicit fix intent before opening fix PRs for feature requests
     required: false
@@ -168,9 +172,17 @@ inputs:
     required: false
     default: 'true'
   pi-session-sharing:
-    description: Save captured pi JSONL session files to state-branch and link resume instructions from watcher comments
+    description: Save captured pi JSONL session files and link resume instructions from watcher comments
     required: false
     default: 'false'
+  pi-session-sharing-mode:
+    description: Where to save captured pi JSONL session files. One of state-branch or gist
+    required: false
+    default: state-branch
+  pi-session-gist-token:
+    description: Token with gist permission, required when pi-session-sharing-mode is gist
+    required: false
+    default: ''
   state-repo:
     description: Repository for durable state as owner/repo. Defaults to current repository.
     required: false

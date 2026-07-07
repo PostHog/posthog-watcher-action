@@ -19,7 +19,10 @@ export interface PiSessionRecord {
 }
 
 export interface PiSessionReference {
-  branch: string;
+  kind: 'state-branch' | 'gist';
+  branch?: string;
+  gistUrl?: string;
+  gistId?: string;
   files: Array<{ name: string; url: string }>;
 }
 
@@ -62,6 +65,10 @@ export async function publishPiSessionFiles(octokit: Octokit, inputs: ActionInpu
   const selected = records.slice(startIndex);
   if (!selected.length) return undefined;
 
+  if (inputs.piSessionSharingMode === 'gist') {
+    return publishPiSessionGist(inputs, subject, selected);
+  }
+
   const state = stateRepository(inputs);
   await ensureBranch(octokit, state.owner, state.repo, inputs.stateBranch);
 
@@ -80,12 +87,28 @@ export async function publishPiSessionFiles(octokit: Octokit, inputs: ActionInpu
   const readmePath = `${basePath}/README.md`;
   await upsertFile(octokit, state.owner, state.repo, inputs.stateBranch, readmePath, renderReadme(source.owner, source.repo, files), `Document pi session for ${subject}`);
   core.info(`Saved ${files.length} pi session file(s) to ${state.owner}/${state.repo}@${inputs.stateBranch}:${basePath}.`);
-  return { branch: inputs.stateBranch, files };
+  return { kind: 'state-branch', branch: inputs.stateBranch, files };
 }
 
 export function formatPiSessionMarkdown(reference: PiSessionReference | undefined): string {
   if (!reference) return '';
   const fileList = reference.files.map((file) => `- [\`${file.name}\`](${file.url})`).join('\n');
+  if (reference.kind === 'gist') {
+    return `### Pi session
+
+The JSONL pi session file(s) for this run were saved to a private gist: ${reference.gistUrl ?? '(gist URL unavailable)'}
+
+Download one locally, then fork it into your own pi session:
+
+\`\`\`bash
+pi --fork path/to/session.jsonl
+\`\`\`
+
+Saved session files:
+${fileList}
+`;
+  }
+
   return `### Pi session
 
 The JSONL pi session file(s) for this run were saved to the \`${reference.branch}\` branch. Download one locally, then fork it into your own pi session:
@@ -97,6 +120,37 @@ pi --fork path/to/session.jsonl
 Saved session files:
 ${fileList}
 `;
+}
+
+async function publishPiSessionGist(inputs: ActionInputs, subject: string, selected: PiSessionRecord[]): Promise<PiSessionReference> {
+  if (!inputs.piSessionGistToken) {
+    throw new Error('pi-session-gist-token is required when pi-session-sharing-mode is gist');
+  }
+
+  const gistOctokit = github.getOctokit(inputs.piSessionGistToken);
+  const source = github.context.repo;
+  const files: Record<string, { content: string }> = {};
+
+  for (const [index, record] of selected.entries()) {
+    const name = safePathPart(`call-${record.callNumber}-${index + 1}-${path.basename(record.path)}`);
+    files[name] = { content: await readFile(record.path, 'utf8') };
+  }
+  files['README.md'] = { content: renderReadme(source.owner, source.repo, Object.keys(files).map((name) => ({ name, url: name }))) };
+
+  const response = await gistOctokit.rest.gists.create({
+    public: false,
+    description: `PostHog Watcher pi session for ${source.owner}/${source.repo} ${subject} run ${github.context.runId}`,
+    files,
+  });
+
+  const gistUrl = response.data.html_url ?? '';
+  const gistFiles = response.data.files ?? {};
+  const publishedFiles = Object.entries(gistFiles)
+    .filter(([name]) => name !== 'README.md')
+    .map(([name, file]) => ({ name, url: file?.raw_url ?? `${gistUrl}#file-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` }));
+
+  core.info(`Saved ${publishedFiles.length} pi session file(s) to private gist ${gistUrl}.`);
+  return { kind: 'gist', gistUrl, gistId: response.data.id, files: publishedFiles };
 }
 
 async function listSessionFiles(dir = sessionRoot): Promise<string[]> {

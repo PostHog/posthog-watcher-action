@@ -23,10 +23,10 @@ type ReproductionCheck =
   | { kind: 'command'; command: string }
   | { kind: 'validation'; command: string };
 
-export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs): Promise<RepairRunResult | undefined> {
+export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs, trustedInstructions = ''): Promise<RepairRunResult | undefined> {
   const env = new CommandEnvironment();
   const agent = new PiAgent(inputs);
-  const reproduction = await prepareReproduction(issue, triage, inputs, env, agent);
+  const reproduction = await prepareReproduction(issue, triage, inputs, env, agent, trustedInstructions);
   if (!reproduction) return undefined;
 
   const maxAttempts = Math.min(inputs.maxRepairAttempts, 3);
@@ -35,9 +35,9 @@ export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult,
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     core.info(`Starting repair attempt ${attempt}/${maxAttempts}`);
     if (attempt === 1) {
-      await agent.fixIssue(issue, triage);
+      await agent.fixIssue(issue, triage, trustedInstructions);
     } else {
-      await agent.repairIssue(issue, triage, attempt, failureSummary);
+      await agent.repairIssue(issue, triage, attempt, failureSummary, trustedInstructions);
     }
 
     const reproductionResult = await verifyReproductionAfterAttempt(reproduction, env);
@@ -54,7 +54,7 @@ export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult,
       const reviewGate = await reviewGeneratedDiff(inputs, {
         subject: `Issue #${issue.number}: ${issue.title}`,
         summary: triage.summary,
-        intendedChange: triage.fix.suggestedApproach || triage.fix.reason,
+        intendedChange: [triage.fix.suggestedApproach || triage.fix.reason, trustedInstructions ? `Trusted maintainer instructions: ${trustedInstructions}` : ''].filter(Boolean).join('\n\n'),
       });
       if (reviewGate.approve) {
         return { files: stats.files };
@@ -112,6 +112,7 @@ async function prepareReproduction(
   inputs: ActionInputs,
   env: CommandEnvironment,
   agent: PiAgent,
+  trustedInstructions: string,
 ): Promise<ReproductionCheck | undefined> {
   if (inputs.reproductionCommand) {
     core.info(`Running reproduction command before fix; it is expected to fail: ${inputs.reproductionCommand}`);
@@ -132,7 +133,7 @@ async function prepareReproduction(
   }
 
   core.info('require-reproduction is true; asking pi to add a minimal failing reproduction before implementation.');
-  await agent.establishIssueReproduction(issue, triage);
+  await agent.establishIssueReproduction(issue, triage, trustedInstructions);
   const result = await env.checkShell(inputs.validationCommand, 'failure');
   if (!result.passed) {
     core.warning('Skipping fix because validation-command did not fail after establishing the reproduction; the issue may already be fixed or no failing reproduction was added.');

@@ -35,6 +35,12 @@ async function main(): Promise<void> {
 
   const rawInputs = getInputs();
   const octokit = github.getOctokit(rawInputs.githubToken);
+  const permissionFailure = await verifyCommandRepositoryPermission(octokit, command);
+  if (permissionFailure) {
+    core.info(`Skipping run: ${permissionFailure}.`);
+    core.setOutput('conclusion', 'skipped');
+    return;
+  }
 
   if (rawInputs.mode === 'enqueue') {
     if (isPullRequestPayload()) {
@@ -74,7 +80,7 @@ async function main(): Promise<void> {
 
   const issueNumber = resolveIssueNumber(inputs.issueNumber);
   if (command.command === 'status' || command.command === 'explain' || command.command === 'ask') {
-    const result = await replyToCommand(octokit, issueNumber, inputs, command.command);
+    const result = await replyToCommand(octokit, issueNumber, inputs, command.command, command.extraInstructions || undefined);
     core.setOutput('conclusion', result.conclusion);
     core.setOutput('comment-url', result.commentUrl);
     return;
@@ -82,7 +88,7 @@ async function main(): Promise<void> {
 
   if (isPullRequestPayload() || github.context.eventName === 'pull_request') {
     if (inputs.mode !== 'fix') {
-      core.info('PR review/triage is read-only in this MVP; use @posthog-watcher fix for same-repo PR repair.');
+      core.info(`PR review/triage is read-only in this MVP; use ${inputs.commandMention} fix for same-repo PR repair.`);
       core.setOutput('conclusion', 'skipped PR mutation; use fix command');
       return;
     }
@@ -141,13 +147,13 @@ async function drainQueue(octokit: Octokit, inputs: ActionInputs): Promise<void>
 }
 
 async function processQueueItem(octokit: Octokit, item: QueueItem, inputs: ActionInputs): Promise<void> {
-  const itemInputs = { ...inputs, mode: item.mode };
-  const itemCommand: CommandResolution = { shouldRun: true, mode: item.mode, command: item.command, applyClose: item.applyClose };
+  const itemInputs = { ...inputs, mode: item.mode, commandMention: item.commandMention ?? inputs.commandMention };
+  const itemCommand: CommandResolution = { shouldRun: true, mode: item.mode, command: item.command, applyClose: item.applyClose, extraInstructions: item.extraInstructions, commandMention: item.commandMention };
   core.info(`Draining queued ${item.kind} #${item.number} in ${item.mode} mode${item.command ? ` from ${item.command} command` : ''}.`);
 
   if (item.kind === 'pull_request') {
     if (item.mode !== 'fix') {
-      core.info('PR review/triage is read-only in this MVP; use @posthog-watcher fix for same-repo PR repair. Removing skipped queued PR item.');
+      core.info(`PR review/triage is read-only in this MVP; use ${inputs.commandMention} fix for same-repo PR repair. Removing skipped queued PR item.`);
       return;
     }
     await repairPullRequest(octokit, item.number, itemInputs, item.command);
@@ -155,7 +161,7 @@ async function processQueueItem(octokit: Octokit, item: QueueItem, inputs: Actio
   }
 
   if (item.command === 'status' || item.command === 'explain' || item.command === 'ask') {
-    await replyToCommand(octokit, item.number, itemInputs, item.command, await queuedCommandBody(octokit, item));
+    await replyToCommand(octokit, item.number, itemInputs, item.command, item.extraInstructions || (await queuedCommandBody(octokit, item)));
     return;
   }
 
@@ -293,7 +299,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   const piOutput = await runPi({
     inputs,
     tools: ['read', 'grep', 'find', 'ls'],
-    prompt: formatIssuePrompt(issue, allowedExistingLabels, inputs.mode, relatedItems, repoMemory),
+    prompt: formatIssuePrompt(issue, allowedExistingLabels, inputs.mode, relatedItems, repoMemory, command.extraInstructions, inputs.commandMention),
   });
 
   const triage = parseTriageResult(piOutput);
@@ -326,7 +332,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   if (!security.sensitive && !fixBlocker && shouldReportFixAttempt(triage, inputs)) {
     await updateIssueStatus(octokit, inputs, issue, 'Attempting fix PR', 'Running the guarded repair loop, validation, diff guardrails, and independent review gate.', sweepAttentionMention(inputs, issue.owner));
   }
-  const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs);
+  const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs, command.extraInstructions);
   let closed = false;
   if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, duplicate.duplicate, duplicate.score, security.sensitive)) {
     if (inputs.dryRun) {
@@ -414,6 +420,24 @@ async function ensureBlockingPrTeamReviewRequested(octokit: Octokit, inputs: Act
   }
   await ensureTeamReviewRequested(octokit, pullNumber, inputs.fixPrReviewTeam);
 }
+
+async function verifyCommandRepositoryPermission(octokit: Octokit, command: CommandResolution): Promise<string | undefined> {
+  if (!command.command || !command.actor || command.actor === 'unknown') return undefined;
+
+  const { owner, repo } = github.context.repo;
+  try {
+    const response = await octokit.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: command.actor });
+    const permission = response.data.permission?.toLowerCase() ?? 'none';
+    core.info(`Command actor @${command.actor} has repository permission: ${permission}.`);
+    if (COMMAND_REPOSITORY_PERMISSIONS.has(permission)) return undefined;
+    return `ignoring ${command.command} command from @${command.actor}; repository write, maintain, or admin permission is required (found: ${permission})`;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `could not verify repository permission for @${command.actor}; refusing to run ${command.command}: ${message}`;
+  }
+}
+
+const COMMAND_REPOSITORY_PERMISSIONS = new Set(['admin', 'maintain', 'write']);
 
 function planCommandBlocker(command: CommandResolution): string | undefined {
   return command.command === 'plan' ? 'plan command requested a proposal only; no draft PR was opened' : undefined;
@@ -533,6 +557,8 @@ function issueSnapshotHashOptions(inputs: ActionInputs) {
     repoMemoryEnabled: inputs.repoMemoryEnabled,
     progressComments: inputs.progressComments,
     piSessionSharing: inputs.piSessionSharing,
+    piSessionSharingMode: inputs.piSessionSharingMode,
+    commandMention: inputs.commandMention,
   };
 }
 

@@ -8,7 +8,7 @@ import { runIssueRepair } from './repair-run.js';
 import { commitChangesWithGitHubSignature } from './signed-commit.js';
 import type { TriageResult } from './triage-schema.js';
 
-export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs): Promise<string | undefined> {
+export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs, trustedInstructions = ''): Promise<string | undefined> {
   if (!shouldAttemptFix(triage, inputs)) return undefined;
 
   const status = await git(['status', '--porcelain']);
@@ -40,7 +40,7 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
     }
 
     const pullRequestTemplate = await readPullRequestTemplate();
-    const repair = await runIssueRepair(issue, triage, inputs);
+    const repair = await runIssueRepair(issue, triage, inputs, trustedInstructions);
     if (!repair) {
       return undefined;
     }
