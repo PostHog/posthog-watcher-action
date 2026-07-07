@@ -24,6 +24,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install pi search tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fd-find ripgrep
+          sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
+
       - name: Review commit
         uses: ./
         with:

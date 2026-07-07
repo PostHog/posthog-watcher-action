@@ -13,6 +13,7 @@ export interface ActionInputs {
   allowClose: boolean;
   allowSecurityAi: boolean;
   requireFixCommand: boolean;
+  commandMention: string;
   blockFeatureFixes: boolean;
   dryRun: boolean;
   labelAllowlist: string[];
@@ -45,6 +46,8 @@ export interface ActionInputs {
   repoMemoryEnabled: boolean;
   progressComments: boolean;
   piSessionSharing: boolean;
+  piSessionSharingMode: 'state-branch' | 'gist';
+  piSessionGistToken: string;
   stateRepo: string;
   stateBranch: string;
   commentMarker: string;
@@ -65,6 +68,7 @@ export function getInputs(): ActionInputs {
     allowClose: parseBoolean(core.getInput('allow-close')),
     allowSecurityAi: parseBoolean(core.getInput('allow-security-ai')),
     requireFixCommand: parseBoolean(core.getInput('require-fix-command')),
+    commandMention: normalizeCommandMention(core.getInput('command-mention') || '@posthog-watcher'),
     blockFeatureFixes: parseBoolean(core.getInput('block-feature-fixes') || 'true'),
     dryRun: parseBoolean(core.getInput('dry-run')),
     labelAllowlist: parseCsv(core.getInput('labels') || '*'),
@@ -97,6 +101,8 @@ export function getInputs(): ActionInputs {
     repoMemoryEnabled: parseBoolean(core.getInput('repo-memory-enabled') || 'true'),
     progressComments: parseBoolean(core.getInput('progress-comments') || 'true'),
     piSessionSharing: parseBoolean(core.getInput('pi-session-sharing')),
+    piSessionSharingMode: normalizePiSessionSharingMode(core.getInput('pi-session-sharing-mode') || 'state-branch'),
+    piSessionGistToken: optionalSecret('pi-session-gist-token'),
     stateRepo: core.getInput('state-repo'),
     stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',
     commentMarker: core.getInput('comment-marker') || '<!-- posthog-watcher-action -->',
@@ -143,11 +149,21 @@ function parseCsv(value: string): string[] {
     .filter(Boolean);
 }
 
+function normalizeCommandMention(value: string): string {
+  const trimmed = value.trim() || '@posthog-watcher';
+  return trimmed.startsWith('@') ? trimmed : `@${trimmed}`;
+}
+
 function normalizeQueuedMode(value: string): QueuedMode {
   if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix') {
     return value;
   }
   throw new Error('queued-mode must be one of: auto, triage, investigate, fix');
+}
+
+function normalizePiSessionSharingMode(value: string): 'state-branch' | 'gist' {
+  if (value === 'state-branch' || value === 'gist') return value;
+  throw new Error('pi-session-sharing-mode must be one of: state-branch, gist');
 }
 
 function normalizeMode(value: string): Mode {

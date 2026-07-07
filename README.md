@@ -64,8 +64,11 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install ripgrep for pi grep tool
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install pi search tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fd-find ripgrep
+          sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
 
       - uses: PostHog/posthog-watcher-action@v0
         with:
@@ -136,7 +139,7 @@ The GitHub App needs repository permissions for Contents, Issues, Pull requests,
 
 ## Maintainer commands
 
-On `issue_comment` events, the action only runs when a trusted maintainer/collaborator comments a supported command:
+On `issue_comment` events, the action only runs when a trusted maintainer/collaborator with repository `write`, `maintain`, or `admin` permission comments a supported command. The command mention defaults to `@posthog-watcher` and can be changed with `command-mention`:
 
 ```text
 @posthog-watcher triage
@@ -156,7 +159,7 @@ On `issue_comment` events, the action only runs when a trusted maintainer/collab
 @posthog-watcher stop
 ```
 
-Trusted author associations are `OWNER`, `MEMBER`, and `COLLABORATOR`. Mutating commands still require their workflow inputs, such as `allow-fix: 'true'` or `allow-close: 'true'`, and the normal confidence/risk guardrails. `plan`/`propose-fix` is proposal-only: it refreshes investigation and suggested fix guidance without opening or updating a draft PR.
+Trusted author associations are `OWNER`, `MEMBER`, and `COLLABORATOR`; the action also verifies the comment author's repository permission via GitHub before running. Mutating commands still require their workflow inputs, such as `allow-fix: 'true'` or `allow-close: 'true'`, and the normal confidence/risk guardrails. `plan`/`propose-fix` is proposal-only: it refreshes investigation and suggested fix guidance without opening or updating a draft PR. Text after the command mention is passed to pi as trusted maintainer instructions, subject to the action's safety policy, for example `@posthog-watcher investigate focus on the iOS SDK`.
 
 ## Issue fix PRs
 
@@ -253,7 +256,7 @@ concurrency:
 
 ## Dedicated queue worker
 
-For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or `openai-api-key`. Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Set `trigger-drain-workflow: true` to dispatch the worker immediately after a new queue item is written. Pull request review comments and commented/changes-requested reviews are treated as `@posthog-watcher address review` for same-repo watcher PRs.
+For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or `openai-api-key`. Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Set `trigger-drain-workflow: true` to dispatch the worker immediately after a new queue item is written. Pull request review comments and commented/changes-requested reviews are treated as `<command-mention> address review` for same-repo watcher PRs.
 
 Event enqueue workflow:
 
@@ -318,8 +321,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Install ripgrep for pi grep tool
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install pi search tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fd-find ripgrep
+          sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
       - uses: PostHog/posthog-watcher-action@v0
         with:
           openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
@@ -347,7 +353,8 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `issue-number` | event issue | Issue or PR number to process. |
 | `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `sweep`, `enqueue`, or `drain-queue`. |
 | `allow-fix` | `false` | Allows draft PR creation or same-repo PR branch repair when guardrails pass. |
-| `require-fix-command` | `false` | If true, fixes are proposal-only until a trusted `@posthog-watcher fix` command is posted. Default keeps automatic fixes enabled when `allow-fix: true`. |
+| `require-fix-command` | `false` | If true, fixes are proposal-only until a trusted watcher fix command is posted. Default keeps automatic fixes enabled when `allow-fix: true`. |
+| `command-mention` | `@posthog-watcher` | GitHub mention that triggers issue-comment commands. Accepts values with or without `@`. |
 | `block-feature-fixes` | `true` | If true, feature requests require explicit trusted fix intent (`mode: fix` or a fix/repair command) before opening draft PRs. |
 | `allow-close` | `false` | Allows explicit trusted close/apply-close commands to close high-confidence issues. |
 | `allow-security-ai` | `false` | Allows suspected security-sensitive reports to be sent to pi/OpenAI. |
@@ -381,7 +388,9 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `state-enabled` | `false` | Write durable markdown state records, optionally per-repo memory, and dashboard. |
 | `repo-memory-enabled` | `true` | Read/write advisory repo memory when `state-enabled` is true. |
 | `progress-comments` | `true` | Update the marker-backed issue comment with in-progress phase/status updates. |
-| `pi-session-sharing` | `false` | Save captured pi JSONL session files to `state-branch` and add download/`pi --fork` instructions to watcher comments. |
+| `pi-session-sharing` | `false` | Save captured pi JSONL session files and add download/`pi --fork` instructions to watcher comments. |
+| `pi-session-sharing-mode` | `state-branch` | Where to save captured pi sessions: `state-branch` or `gist`. |
+| `pi-session-gist-token` | empty | Token with `gist` permission, required when `pi-session-sharing-mode: gist`. |
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
 | `comment-marker` | `<!-- posthog-watcher-action -->` | Hidden marker used to create/update one durable issue or command comment. |
@@ -389,11 +398,11 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 ## Guardrails
 
-- Triage uses read-only tools: `read`, `grep`, `find`, `ls`. The `grep` tool requires `rg`/ripgrep on the runner; install it in host workflows before invoking this action, for example `sudo apt-get update && sudo apt-get install -y ripgrep`.
+- Triage uses read-only tools: `read`, `grep`, `find`, `ls`. The search tools require `rg`/ripgrep and `fd` on the runner; install them in host workflows before invoking this action, for example `sudo apt-get update && sudo apt-get install -y fd-find ripgrep && sudo ln -sf "$(which fdfind)" /usr/local/bin/fd`.
 - By default, pi is **not** run with `--approve`. Set `approve-project-resources: true` only for trusted repositories when host repo `AGENTS.md`, `.pi`, and `.agents` resources should be available in CI.
 - Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only `OPENAI_API_KEY` to the pi process, and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
 - The wrapper, not `pi`, performs GitHub API mutations.
-- `pi-session-sharing` is disabled by default. When enabled, pi runs with a temporary session directory, the wrapper saves the generated `.jsonl` files under `pi-sessions/` on `state-branch`, and comments include `pi --fork path/to/session.jsonl` handoff instructions.
+- `pi-session-sharing` is disabled by default. When enabled, pi runs with a temporary session directory, the wrapper saves the generated `.jsonl` files under `pi-sessions/` on `state-branch` by default, and comments include `pi --fork path/to/session.jsonl` handoff instructions. Set `pi-session-sharing-mode: gist` plus `pi-session-gist-token` to upload sessions to a private gist instead of the state branch.
 - Draft PR creation is skipped if the diff is too large or touches workflow files, lockfiles, or minified files.
 - Watcher fix/repair commits are created through GitHub's commit API instead of raw `git commit`/`git push`, so they are GitHub-signed Verified commits.
 - New draft fix PRs use `.github/pull_request_template.md` when present and append watcher-generated summary, rationale, changed files, and validation details.

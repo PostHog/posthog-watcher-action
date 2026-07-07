@@ -16,6 +16,8 @@ export interface QueueItem {
   mode: QueuedMode;
   command?: WatcherCommand;
   applyClose?: boolean;
+  extraInstructions?: string;
+  commandMention?: string;
   enqueuedAt: string;
   source: {
     eventName: string;
@@ -86,6 +88,8 @@ function buildQueueItem(inputs: ActionInputs, command: CommandResolution): Queue
     mode,
     command: command.command,
     applyClose: command.applyClose,
+    extraInstructions: command.extraInstructions,
+    commandMention: command.commandMention,
     enqueuedAt: now,
     source: {
       eventName: github.context.eventName,

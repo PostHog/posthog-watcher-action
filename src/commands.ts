@@ -24,75 +24,117 @@ export interface CommandResolution {
   command?: WatcherCommand;
   applyClose?: boolean;
   reason?: string;
+  actor?: string;
+  extraInstructions?: string;
+  commandMention?: string;
+}
+
+interface ParsedWatcherCommand {
+  command: WatcherCommand;
+  extraInstructions: string;
 }
 
 export const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
-export function resolveCommand(): CommandResolution {
+export function resolveCommand(commandMention = configuredCommandMention()): CommandResolution {
   if (github.context.eventName === 'pull_request_review_comment') {
-    core.info('Treating pull request review comment as @posthog-watcher address review.');
-    return commandToResolution('address-review');
+    const actor = github.context.payload.sender?.login ?? 'unknown';
+    core.info(`Treating pull request review comment as ${commandMention} address review.`);
+    return { ...commandToResolution('address-review'), actor, commandMention };
   }
 
   if (github.context.eventName === 'pull_request_review') {
     const payload = github.context.payload as { review?: { state?: string } };
     if (payload.review?.state === 'commented' || payload.review?.state === 'changes_requested') {
-      core.info(`Treating pull request review ${payload.review.state} event as @posthog-watcher address review.`);
-      return commandToResolution('address-review');
+      const actor = github.context.payload.sender?.login ?? 'unknown';
+      core.info(`Treating pull request review ${payload.review.state} event as ${commandMention} address review.`);
+      return { ...commandToResolution('address-review'), actor, commandMention };
     }
     return { shouldRun: false, reason: `pull request review state does not require repair: ${payload.review?.state ?? 'unknown'}` };
   }
 
   if (github.context.eventName !== 'issue_comment') {
-    return { shouldRun: true };
+    return { shouldRun: true, commandMention };
   }
 
   const payload = github.context.payload as {
     comment?: { body?: string; author_association?: string; user?: { login?: string } | null };
   };
 
-  const command = parseWatcherCommand(payload.comment?.body ?? '');
-  if (!command) {
-    return { shouldRun: false, reason: 'issue comment does not contain a posthog-watcher command' };
+  const parsed = parseWatcherCommandDetails(payload.comment?.body ?? '', commandMention);
+  if (!parsed) {
+    return { shouldRun: false, reason: `issue comment does not contain a ${commandMention} command` };
   }
 
-  if (command === 'stop') {
-    return { shouldRun: false, command, reason: 'received stop command' };
+  if (parsed.command === 'stop') {
+    return { shouldRun: false, command: parsed.command, reason: 'received stop command' };
   }
 
   const association = payload.comment?.author_association ?? '';
   if (!TRUSTED_ASSOCIATIONS.has(association)) {
     return {
       shouldRun: false,
-      command,
-      reason: `ignoring ${command} command from untrusted author association: ${association || 'unknown'}`,
+      command: parsed.command,
+      reason: `ignoring ${parsed.command} command from untrusted author association: ${association || 'unknown'}`,
     };
   }
 
-  core.info(`Accepted @posthog-watcher ${command} command from ${payload.comment?.user?.login ?? 'unknown'}.`);
-  return commandToResolution(command);
+  const actor = payload.comment?.user?.login ?? 'unknown';
+  core.info(`Accepted ${commandMention} ${parsed.command} command from ${actor}.`);
+  return { ...commandToResolution(parsed.command), actor, extraInstructions: parsed.extraInstructions, commandMention };
 }
 
-export function parseWatcherCommand(body: string): WatcherCommand | undefined {
-  const match = body.match(/(?:^|\s)@(?:posthog-watcher|posthog-watcher-action)(?:\[bot\])?\s+([^\n]+)/i);
-  const text = match?.[1]?.trim().toLowerCase();
+export function parseWatcherCommand(body: string, commandMention = '@posthog-watcher'): WatcherCommand | undefined {
+  return parseWatcherCommandDetails(body, commandMention)?.command;
+}
+
+export function parseWatcherCommandDetails(body: string, commandMention = '@posthog-watcher'): ParsedWatcherCommand | undefined {
+  const mention = commandMentionPattern(commandMention);
+  const match = body.match(new RegExp(`(?:^|\\s)${mention}\\s+([\\s\\S]*)`, 'i'));
+  const text = match?.[1]?.trim();
   if (!text) return undefined;
 
-  if (/^(triage|review|re-review|re-run)\b/.test(text)) return 'triage';
-  if (/^investigate\b/.test(text)) return 'investigate';
-  if (/^fix\s+ci\b/.test(text)) return 'fix-ci';
-  if (/^address\s+review\b/.test(text)) return 'address-review';
-  if (/^rebase\b/.test(text)) return 'rebase';
-  if (/^(plan|propose\s+fix|propose-fix)\b/.test(text)) return 'plan';
-  if (/^(fix|autofix)\b/.test(text)) return 'fix';
-  if (/^status\b/.test(text)) return 'status';
-  if (/^explain\b/.test(text)) return 'explain';
-  if (/^ask\b/.test(text)) return 'ask';
-  if (/^(close|autoclose)\b/.test(text)) return 'close';
-  if (/^(apply-close|apply close)\b/.test(text)) return 'apply-close';
-  if (/^stop\b/.test(text)) return 'stop';
+  const commandPatterns: Array<[RegExp, WatcherCommand]> = [
+    [/^(?:triage|review|re-review|re-run)\b\s*([\s\S]*)$/i, 'triage'],
+    [/^investigate\b\s*([\s\S]*)$/i, 'investigate'],
+    [/^fix\s+ci\b\s*([\s\S]*)$/i, 'fix-ci'],
+    [/^address\s+review\b\s*([\s\S]*)$/i, 'address-review'],
+    [/^rebase\b\s*([\s\S]*)$/i, 'rebase'],
+    [/^(?:plan|propose\s+fix|propose-fix)\b\s*([\s\S]*)$/i, 'plan'],
+    [/^(?:fix|autofix)\b\s*([\s\S]*)$/i, 'fix'],
+    [/^status\b\s*([\s\S]*)$/i, 'status'],
+    [/^explain\b\s*([\s\S]*)$/i, 'explain'],
+    [/^ask\b\s*([\s\S]*)$/i, 'ask'],
+    [/^(?:close|autoclose)\b\s*([\s\S]*)$/i, 'close'],
+    [/^(?:apply-close|apply close)\b\s*([\s\S]*)$/i, 'apply-close'],
+    [/^stop\b\s*([\s\S]*)$/i, 'stop'],
+  ];
+
+  for (const [pattern, command] of commandPatterns) {
+    const commandMatch = text.match(pattern);
+    if (commandMatch) return { command, extraInstructions: (commandMatch[1] ?? '').trim() };
+  }
 
   return undefined;
+}
+
+function configuredCommandMention(): string {
+  return normalizeCommandMention(core.getInput('command-mention') || '@posthog-watcher');
+}
+
+export function normalizeCommandMention(value: string): string {
+  const trimmed = value.trim() || '@posthog-watcher';
+  return trimmed.startsWith('@') ? trimmed : `@${trimmed}`;
+}
+
+function commandMentionPattern(commandMention: string): string {
+  const normalized = normalizeCommandMention(commandMention);
+  const mention = escapeRegExp(normalized.replace(/^@/, ''));
+  return `@${mention}(?:\\[bot\\])?`;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function commandToResolution(command: WatcherCommand): CommandResolution {

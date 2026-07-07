@@ -40,6 +40,16 @@ test('maintainer issue comment commands are documented', () => {
   assert.match(readme, /@posthog-watcher fix/);
   assert.match(commands, /propose-fix/);
   assert.match(commands, /case 'plan'/);
+  assert.match(commands, /extraInstructions/);
+  assert.match(commands, /commandMention/);
+  assert.match(commands, /command-mention/);
+  assert.match(read('action.yml'), /command-mention/);
+  assert.match(read('src/inputs.ts'), /commandMention/);
+  assert.match(read('src/issue-context.ts'), /trustedInstructions/);
+  assert.match(read('src/repair-run.ts'), /Trusted maintainer instructions/);
+  assert.match(readme, /repository `write`, `maintain`, or `admin` permission/);
+  assert.match(readme, /trusted maintainer instructions/);
+  assert.match(readme, /`command-mention`/);
 });
 
 test('pull request review comments trigger watcher PR repair', () => {
@@ -205,12 +215,15 @@ test('dedicated queue modes are wired without requiring OpenAI for enqueue', () 
   assert.match(index, /skipped non-watcher PR/);
   assert.match(index, /maybeTriggerDrainWorkflow/);
   assert.match(index, /createWorkflowDispatch/);
+  assert.match(index, /verifyCommandRepositoryPermission/);
   assert.match(index, /requireOpenAiApiKey\(rawInputs\)/);
   assert.match(index, /inputs\.mode === 'drain-queue'/);
-  assert.match(index, /replyToCommand\(octokit, item\.number, itemInputs, item\.command, await queuedCommandBody/);
+  assert.match(index, /replyToCommand\(octokit, item\.number, itemInputs, item\.command, item\.extraInstructions \|\| \(await queuedCommandBody/);
   assert.match(queue, /queue\.json/);
   assert.match(queue, /samePendingItem/);
   assert.match(queue, /commentId: payload\.comment\?\.id/);
+  assert.match(queue, /extraInstructions: command\.extraInstructions/);
+  assert.match(queue, /commandMention: command\.commandMention/);
   assert.match(queue, /commandSourceKey/);
   assert.match(queue, /attempts: 0/);
   assert.match(readme, /Dedicated queue worker/);
@@ -227,15 +240,23 @@ test('pi session sharing is opt-in and links forkable JSONL sessions', () => {
   const comment = read('src/comment.ts');
   const readme = read('README.md');
   assert.match(action, /pi-session-sharing/);
+  assert.match(action, /pi-session-sharing-mode/);
+  assert.match(action, /pi-session-gist-token/);
   assert.match(action, /default: 'false'/);
   assert.match(inputs, /piSessionSharing/);
+  assert.match(inputs, /piSessionSharingMode/);
+  assert.match(inputs, /piSessionGistToken/);
   assert.match(piRunner, /beginPiSessionCapture/);
   assert.match(piSessions, /--no-session/);
   assert.match(piSessions, /--session-dir/);
   assert.match(piSessions, /pi --fork path\/to\/session\.jsonl/);
   assert.match(piSessions, /pi-sessions\//);
+  assert.match(piSessions, /gists\.create/);
+  assert.match(piSessions, /private gist/);
   assert.match(comment, /piSessionMarkdown/);
   assert.match(readme, /pi-session-sharing/);
+  assert.match(readme, /pi-session-sharing-mode/);
+  assert.match(readme, /pi-session-gist-token/);
 });
 
 test('queue drain preserves FIFO and retry state', () => {

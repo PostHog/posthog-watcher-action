@@ -29,6 +29,34 @@ test('bundled action entrypoint loads and reads GitHub Action inputs', () => {
   assert.doesNotMatch(result.stdout + result.stderr, /Input required and not supplied/);
 });
 
+test('custom watcher command mention is accepted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'posthog-watcher-action-'));
+  const eventPath = join(dir, 'event.json');
+  writeFileSync(eventPath, JSON.stringify({
+    issue: { number: 123 },
+    comment: {
+      body: '@sdk-watcher triage focus on docs',
+      author_association: 'MEMBER',
+      user: { login: 'maintainer' },
+    },
+  }));
+
+  const result = spawnSync(process.execPath, ['dist/index.js'], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      'INPUT_COMMAND-MENTION': '@sdk-watcher',
+      GITHUB_REPOSITORY: 'PostHog/posthog-watcher-action',
+      GITHUB_EVENT_NAME: 'issue_comment',
+      GITHUB_EVENT_PATH: eventPath,
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stdout + result.stderr, /Input required and not supplied: github-token/);
+  assert.doesNotMatch(result.stdout + result.stderr, /does not contain/);
+});
+
 test('issue comments without watcher commands are skipped before inputs are required', () => {
   const dir = mkdtempSync(join(tmpdir(), 'posthog-watcher-action-'));
   const eventPath = join(dir, 'event.json');
@@ -52,6 +80,6 @@ test('issue comments without watcher commands are skipped before inputs are requ
   });
 
   assert.equal(result.status, 0);
-  assert.match(result.stdout + result.stderr, /Skipping run: issue comment does not contain a posthog-watcher command/);
+  assert.match(result.stdout + result.stderr, /Skipping run: issue comment does not contain a @posthog-watcher command/);
   assert.doesNotMatch(result.stdout + result.stderr, /Input required and not supplied/);
 });
