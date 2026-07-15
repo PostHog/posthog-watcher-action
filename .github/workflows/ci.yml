@@ -65,10 +65,12 @@ jobs:
           fetch-depth: 0
 
       - name: Check dist is untouched
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if ! git diff --quiet "origin/${{ github.base_ref }}...HEAD" -- dist; then
+          if ! git diff --quiet "origin/${BASE_REF}...HEAD" -- dist; then
             echo "::error::Pull requests must not modify dist/ — it is rebuilt and committed on main by the Sync dist workflow."
-            git diff --stat "origin/${{ github.base_ref }}...HEAD" -- dist
+            git diff --stat "origin/${BASE_REF}...HEAD" -- dist
             exit 1
           fi
           echo "dist untouched"

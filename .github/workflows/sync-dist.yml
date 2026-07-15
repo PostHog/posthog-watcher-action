@@ -21,7 +21,7 @@ jobs:
     # message intentionally omits [skip ci] so CI still validates the exact
     # commit consumers fetch from main (when pushed with an App token; pushes
     # made with the default GITHUB_TOKEN never trigger workflows).
-    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message != 'chore: rebuild dist'
+    if: "github.event_name == 'workflow_dispatch' || github.event.head_commit.message != 'chore: rebuild dist'"
     runs-on: ubuntu-latest
     env:
       # The secrets context is not available in step-level `if:`; expose the
