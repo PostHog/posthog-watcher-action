@@ -101,7 +101,7 @@ Instead of running the local `pi` repair loop, the action can hand the whole fix
 > **The `posthog-code` executor bypasses this action's fix guardrails.** PostHog Code owns the agent loop, branch, commits, and PR in this mode, so none of the following apply to delegated fixes: the bounded repair loop, `reproduction-command`/`require-reproduction` reproduction-first checks, `validation-command`, `max-changed-files`/`max-diff-lines` diff guardrails, the independent read-only review gate, GitHub-signed Verified commits, `.github/pull_request_template.md` composition, and the `posthog-watcher/issue-N` branch naming. Review delegated PRs with the same scrutiny as any external contribution. The default executor stays `pi`, which keeps all guardrails.
 
 ```yaml
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }} # pha_ gateway token, used for triage
           github-token: ${{ secrets.GITHUB_TOKEN }}
