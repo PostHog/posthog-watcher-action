@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
+import { isReviewableCodeFile } from './code-files.js';
 import { git } from './git.js';
 import type { ActionInputs } from './inputs.js';
 import { runPi } from './pi-runner.js';
@@ -11,16 +12,13 @@ export interface CommitReviewResult {
   response: string;
 }
 
-const CODE_FILE_PATTERN = /(?:^|\/)(?:Dockerfile(?:\..+)?|Makefile|CMakeLists\.txt)$|\.(c|cc|clj|cljs|cmake|cpp|cs|css|dart|ex|exs|fs|fsx|go|gradle|h|hpp|html|java|js|json|jsonc|jsx|kt|kts|lua|m|mm|php|pl|properties|proto|py|r|rb|rs|scala|sh|sql|swift|toml|ts|tsx|vue|xml|yml|yaml)$/i;
-const DOCS_ONLY_PATTERN = /(^|\/)docs?\/|\.mdx?$/i;
-
 export async function reviewCommit(inputs: ActionInputs): Promise<CommitReviewResult> {
   const sha = inputs.commitSha ?? github.context.sha;
   if (!sha) throw new Error('No commit SHA provided and github.sha is unavailable.');
 
   const nameStatus = await git(['show', '--name-only', '--format=', sha]);
   const files = nameStatus.split('\n').map((file) => file.trim()).filter(Boolean);
-  const codeFiles = files.filter((file) => CODE_FILE_PATTERN.test(file) && !DOCS_ONLY_PATTERN.test(file));
+  const codeFiles = files.filter(isReviewableCodeFile);
 
   if (!codeFiles.length) {
     const result = {

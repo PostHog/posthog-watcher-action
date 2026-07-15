@@ -50,7 +50,7 @@ export async function replyToCommand(octokit: Octokit, issueNumber: number, inpu
   const piSessionMarkdown = formatPiSessionMarkdown(await publishPiSessionFiles(octokit, inputs, `${command}-${issueNumber}`, piSessionStartIndex));
   if (piSessionMarkdown) body += `\n\n${piSessionMarkdown}`;
 
-  body = redactSecrets(body, [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken]);
+  body = redactSecrets(body, [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken]);
   const commentUrl = inputs.dryRun ? '' : await upsertIssueComment(octokit, issueNumber, marker, body);
   return { conclusion: `${command} replied`, commentUrl };
 }

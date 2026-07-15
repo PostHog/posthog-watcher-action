@@ -176,7 +176,7 @@ function extractMessageText(message: PiMessage): string {
 }
 
 function formatPiDiagnostics(stdout: string, stderr: string, inputs: ActionInputs): string {
-  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken];
+  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken];
   const errors = collectPiErrors(stdout).map((error) => redactSecrets(error, secrets));
   const sections = [];
   if (errors.length) sections.push(`pi errors:\n${errors.join('\n')}`);

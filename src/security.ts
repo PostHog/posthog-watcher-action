@@ -47,6 +47,25 @@ export function assessIssueSecurity(issue: IssueSnapshot, commentMarker: string)
   return { sensitive: reasons.size > 0, reasons: [...reasons] };
 }
 
+// Pull requests get a narrower gate than issues: the title/body are report
+// text and use the full term+credential assessment, but the diff is code —
+// where words like "security" are routine — so only credential evidence
+// (real-looking tokens, keys, secrets) makes a diff sensitive.
+export function assessPullRequestSecurity(params: { title: string; body: string; diff: string }): SecurityAssessment {
+  const reasons = new Set<string>();
+  const reportHaystack = [params.title, params.body].join('\n');
+
+  for (const { reason, pattern } of SECURITY_REPORT_PATTERNS) {
+    if (pattern.test(reportHaystack)) reasons.add(reason);
+  }
+
+  for (const reason of credentialEvidenceReasons([reportHaystack, params.diff].join('\n'))) {
+    reasons.add(reason);
+  }
+
+  return { sensitive: reasons.size > 0, reasons: [...reasons] };
+}
+
 function credentialEvidenceReasons(value: string): string[] {
   const reasons = new Set<string>();
 

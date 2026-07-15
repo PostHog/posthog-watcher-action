@@ -30,7 +30,7 @@ export function parseTriageResult(text: string): TriageResult {
   return normalizeTriageResult(raw);
 }
 
-function extractJson(text: string): string {
+export function extractJson(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced?.[1]) return fenced[1].trim();
 
@@ -100,6 +100,6 @@ function clampNumber(value: unknown, min: number, max: number, fallback: number)
   return Math.min(max, Math.max(min, value));
 }
 
-function enumValue<const T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+export function enumValue<const T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === 'string' && allowed.includes(value as T) ? (value as T) : fallback;
 }

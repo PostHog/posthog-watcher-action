@@ -12,13 +12,37 @@ inputs:
     required: false
     default: ''
   posthog-region:
-    description: PostHog Cloud region for the LLM gateway (us, eu, or dev). Only used with posthog/* models.
+    description: PostHog Cloud region (us, eu, or dev). Used with posthog/* models for the LLM gateway, and with fix-executor posthog-code to pick the PostHog Code tasks REST API host.
     required: false
     default: 'us'
   openai-api-key:
     description: OpenAI API key used by pi. Required for openai/* models except in enqueue mode.
     required: false
     default: ''
+  fix-executor:
+    description: Fix execution engine. pi runs the guarded local repair loop; posthog-code delegates the whole fix to PostHog Code's cloud sandbox, which opens the PR itself. WARNING - posthog-code bypasses this action's fix guardrails (repair loop, reproduction checks, max-changed-files/max-diff-lines, independent review gate, GitHub-signed commits, validation-command, PR template).
+    required: false
+    default: 'pi'
+  posthog-code-api-key:
+    description: PostHog personal API key (phx_...) for the PostHog Code tasks REST API. Required when fix-executor is posthog-code. This is a different credential from posthog-api-key (the pha_ LLM gateway token).
+    required: false
+    default: ''
+  posthog-code-project-id:
+    description: PostHog project id for the PostHog Code tasks REST API. Required when fix-executor is posthog-code. The API host comes from posthog-region and the cloud model from the model input (posthog/* ids map directly; other providers fall back to claude-opus-4-8).
+    required: false
+    default: ''
+  posthog-code-runtime-adapter:
+    description: PostHog Code runtime adapter for delegated cloud runs.
+    required: false
+    default: 'claude'
+  posthog-code-poll-interval-ms:
+    description: Poll interval in milliseconds while waiting for a delegated PostHog Code run to finish.
+    required: false
+    default: '15000'
+  posthog-code-timeout-ms:
+    description: Overall timeout in milliseconds for a delegated PostHog Code run before the action requests cancellation.
+    required: false
+    default: '1800000'
   github-token:
     description: GitHub token for issue labels, comments, branches, and PRs
     required: false
@@ -32,7 +56,7 @@ inputs:
     required: false
     default: ''
   mode:
-    description: auto, triage, investigate, fix, commit-review, sweep, enqueue, or drain-queue
+    description: auto, triage, investigate, fix, commit-review, pr-review, sweep, enqueue, or drain-queue
     required: false
     default: auto
   allow-fix:
@@ -111,6 +135,18 @@ inputs:
     description: Optional team reviewer slug or org/team (for example acme/platform-reviewers) for generated fix PRs. Empty means no team review request.
     required: false
     default: ''
+  allow-pr-review:
+    description: 'Whether pr-review mode may post code reviews (summary comment + inline diff comments) on pull requests. Only same-repo PRs are reviewed; fork PRs are always skipped so the model API key is never exposed to untrusted code.'
+    required: false
+    default: 'false'
+  max-review-files:
+    description: Maximum changed files to include when reviewing a pull request in pr-review mode
+    required: false
+    default: '30'
+  max-review-findings:
+    description: Maximum inline findings pr-review may post on a single pull request
+    required: false
+    default: '20'
   commit-sha:
     description: Commit SHA to review when mode is commit-review. Defaults to github.sha.
     required: false
@@ -221,6 +257,8 @@ outputs:
     description: Whether the issue was closed by an explicit trusted close/apply-close command
   triage-json:
     description: Raw normalized triage JSON
+  review-verdict:
+    description: Pull request review verdict when mode is pr-review (clean, comment, or changes_requested)
 
 runs:
   using: node24

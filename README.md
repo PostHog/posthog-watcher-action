@@ -93,6 +93,34 @@ To route through the PostHog LLM gateway instead of OpenAI, pick a `posthog/*` m
 
 The model prefix decides the provider: `openai/*` models use `openai-api-key`, `posthog/*` models use `posthog-api-key`.
 
+## Delegating fixes to PostHog Code (cloud)
+
+Instead of running the local `pi` repair loop, the action can hand the whole fix to [PostHog Code](https://posthog.com/code)'s cloud sandbox via the PostHog tasks REST API. Set `fix-executor: posthog-code`: the action creates a remote task, starts a background cloud run, polls it to completion, and links the PR that PostHog Code opened. Triage, labeling, dedup, and comments still run through `pi` in the runner; only fix execution is delegated.
+
+> [!WARNING]
+> **The `posthog-code` executor bypasses this action's fix guardrails.** PostHog Code owns the agent loop, branch, commits, and PR in this mode, so none of the following apply to delegated fixes: the bounded repair loop, `reproduction-command`/`require-reproduction` reproduction-first checks, `validation-command`, `max-changed-files`/`max-diff-lines` diff guardrails, the independent read-only review gate, GitHub-signed Verified commits, `.github/pull_request_template.md` composition, and the `posthog-watcher/issue-N` branch naming. Review delegated PRs with the same scrutiny as any external contribution. The default executor stays `pi`, which keeps all guardrails.
+
+```yaml
+      - uses: PostHog/posthog-watcher-action@v0
+        with:
+          posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }} # pha_ gateway token, used for triage
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ inputs['issue-number'] }}
+          model: posthog/claude-opus-4-8
+          allow-fix: 'true'
+          fix-executor: posthog-code
+          posthog-code-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_CODE_API_KEY }} # phx_ personal API key
+          posthog-code-project-id: '12345'
+```
+
+Prerequisites and notes:
+
+- The target repository must be connected to PostHog Code in your PostHog project so its cloud sandbox can clone, push a branch, and open the PR.
+- `posthog-code-api-key` is a **personal API key** (`phx_...`) with task scope. It is a different credential from `posthog-api-key`, which is a `pha_` OAuth token for the LLM gateway; the two are not interchangeable.
+- Delegation reuses the existing repo configuration: `posthog-region` picks the tasks API host (`us` → `https://us.posthog.com`, `eu` → `https://eu.posthog.com`), and the `model` input picks the cloud model — `posthog/*` ids map directly (`posthog/claude-opus-4-8:high` → `claude-opus-4-8`), while other providers (`openai/*`) fall back to `claude-opus-4-8` because they are not PostHog Code cloud models.
+- Cloud runs take minutes; the job stays alive polling until the run finishes or `posthog-code-timeout-ms` elapses (then the action requests cancellation).
+- `fix-pr-review-team` still applies: the action requests team review on the PR PostHog Code opened.
+
 For PR creation with `${{ secrets.GITHUB_TOKEN }}`, the target repository must also enable **Settings → Actions → General → Workflow permissions → Read and write permissions** and **Allow GitHub Actions to create and approve pull requests**.
 
 ## GitHub token options
@@ -357,17 +385,75 @@ If a queued item fails, its attempt count is incremented before processing. The 
 
 Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mode: commit-review`. They inspect one commit, write a workflow summary, and perform no labels, comments, PRs, or other GitHub mutations.
 
+## Pull request reviews
+
+`mode: pr-review` posts a CodeRabbit-style code review on a pull request: a summary comment with a verdict (`clean`, `comment`, or `changes_requested`), inline diff comments for each finding, and read-only replies to follow-up questions on its review threads. It is opt-in via `allow-pr-review: true`.
+
+Only **same-repo** pull requests are reviewed. Fork PRs are always skipped so the model API key is never exposed to untrusted code; guard the job with `if: github.event.pull_request.head.repo.full_name == github.repository` as well so fork events never start a run.
+
+Example workflow:
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review_comment:
+    types: [created]
+
+# Review-comment payloads also carry pull_request, so keying on the PR number
+# alone would let any comment cancel an in-flight review. Push runs share one
+# group per PR (a new push supersedes the stale review); each comment run gets
+# its own group and never cancels anything.
+concurrency:
+  group: posthog-watcher-pr-review-${{ github.event.pull_request.number }}-${{ github.event.comment.id || 'review' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pr-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: PostHog/posthog-watcher-action@main
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: pr-review
+          allow-pr-review: 'true'
+```
+
+Behavior:
+
+- `pi` runs read-only (`read`, `grep`, `find`, `ls`) over the diff; it never edits files or calls the GitHub API.
+- Inline findings are validated against the diff — a finding whose line is not part of the change is dropped (never posted). If GitHub rejects the inline positions, the findings fall back into the summary comment.
+- The summary comment is upserted via a hidden marker (derived from `comment-marker`, so multiple watcher instances stay isolated); re-review on each push updates one comment instead of piling up. Inline findings carry a hidden fingerprint so the same finding is not re-posted on later pushes.
+- Any review comment — thread root or reply — that mentions the watcher without a fix command (for example `@posthog-watcher why is this unsafe?`) is answered read-only in the thread, with the thread's original finding as context.
+- `pr-review` mode is strictly read-only: fix commands (`fix`, `fix ci`, `address review`, `rebase`) and plain review comments are skipped with a logged conclusion instead of being routed to PR repair. Run a separate workflow with `mode: auto`/`fix` (and `contents: write`) for repair commands.
+- The same security gate that protects issues applies: a PR whose title/body looks security-sensitive, or whose title/body/diff contains real-looking credentials, is skipped unless `allow-security-ai: true`. The diff is only checked for credential evidence — code that merely mentions "security" is not flagged.
+
 ## Inputs
 
 | Input | Default | Description |
 | --- | --- | --- |
 | `openai-api-key` | required for `openai/*` models except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
 | `posthog-api-key` | required for `posthog/*` models except `enqueue` | PostHog OAuth access token (`pha_...`) used by `pi` against the PostHog LLM gateway. Personal API keys (`phx_...`) are **not** accepted by the gateway. Tokens are minted by a PostHog OAuth login (for example PostHog Code or `@posthog/harness` `/login`) and expire after about a week, so rotate the secret. `enqueue` mode does not call `pi` and may omit it. |
-| `posthog-region` | `us` | PostHog Cloud region for the LLM gateway: `us`, `eu`, or `dev`. Only used with `posthog/*` models. |
+| `posthog-region` | `us` | PostHog Cloud region: `us`, `eu`, or `dev`. Used with `posthog/*` models for the LLM gateway, and with `fix-executor: posthog-code` to pick the PostHog Code tasks REST API host. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, PRs, and optional state. |
 | `model` | `openai/gpt-5.6-terra:high` | pi model identifier with high thinking enabled. The prefix picks the provider: `openai/*` models call OpenAI directly, `posthog/*` models route through the PostHog LLM gateway (for example `posthog/claude-opus-4-8`). |
+| `fix-executor` | `pi` | Fix execution engine: `pi` runs the guarded local repair loop; `posthog-code` delegates the whole fix to PostHog Code's cloud sandbox, **bypassing this action's fix guardrails** (see [Delegating fixes to PostHog Code](#delegating-fixes-to-posthog-code-cloud)). |
+| `posthog-code-api-key` | required when `fix-executor: posthog-code` | PostHog **personal API key** (`phx_...`) for the PostHog Code tasks REST API. Not the same credential as `posthog-api-key`. |
+| `posthog-code-project-id` | required when `fix-executor: posthog-code` | PostHog project id for the PostHog Code tasks REST API. The API host comes from `posthog-region` and the cloud model from `model` (`posthog/*` ids map directly; other providers fall back to `claude-opus-4-8`). |
+| `posthog-code-runtime-adapter` | `claude` | PostHog Code runtime adapter for delegated cloud runs. |
+| `posthog-code-poll-interval-ms` | `15000` | Poll interval while waiting for a delegated run to finish. |
+| `posthog-code-timeout-ms` | `1800000` | Overall timeout for a delegated run before the action requests cancellation. |
 | `issue-number` | event issue | Issue or PR number to process. |
-| `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `sweep`, `enqueue`, or `drain-queue`. |
+| `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `pr-review`, `sweep`, `enqueue`, or `drain-queue`. |
 | `allow-fix` | `false` | Allows draft PR creation or same-repo PR branch repair when guardrails pass. |
 | `require-fix-command` | `false` | If true, fixes are proposal-only until a trusted watcher fix command is posted. Default keeps automatic fixes enabled when `allow-fix: true`. |
 | `command-mention` | `@posthog-watcher` | GitHub mention that triggers issue-comment commands. Accepts values with or without `@`. |
@@ -388,6 +474,9 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `require-reproduction` | `false` | Require a failing reproduction before issue fix attempts; uses `reproduction-command`, or `validation-command` after `pi` adds a minimal regression check. |
 | `fix-pr-review-team` | empty | Optional team reviewer slug or `org/team` (for example `acme/platform-reviewers`) for generated fix PRs. Empty means no team review is requested. |
 | `commit-sha` | empty | Commit SHA to review in `commit-review` mode. |
+| `allow-pr-review` | `false` | Allows `pr-review` mode to post code reviews (summary comment plus inline diff comments) on same-repo pull requests. Fork PRs are always skipped. |
+| `max-review-files` | `30` | Maximum changed files to review in `pr-review` mode. |
+| `max-review-findings` | `20` | Maximum inline findings `pr-review` may post on a pull request. |
 | `max-sweep-items` | `10` | Maximum open issues to process in `sweep` mode. |
 | `max-sweep-fix-items` | `0` | Maximum sweep items that may attempt fixes. |
 | `sweep-query` | `is:issue is:open archived:false` | Search query suffix for `sweep` mode. |
@@ -414,6 +503,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 ## Guardrails
 
+- **All fix guardrails below assume the default `fix-executor: pi`.** With `fix-executor: posthog-code`, fix execution is delegated to PostHog Code's cloud sandbox and the repair loop, reproduction checks, diff limits, review gate, signed commits, and PR template guardrails are bypassed for delegated fixes.
 - Triage uses read-only tools: `read`, `grep`, `find`, `ls`. The search tools require `rg`/ripgrep and `fd` on the runner; install them in host workflows before invoking this action, for example `sudo apt-get update && sudo apt-get install -y fd-find ripgrep && sudo ln -sf "$(which fdfind)" /usr/local/bin/fd`.
 - By default, pi is **not** run with `--approve`. Set `approve-project-resources: true` only for trusted repositories when host repo `AGENTS.md`, `.pi`, and `.agents` resources should be available in CI.
 - Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only the selected provider's credential to the pi process (`POSTHOG_API_KEY` for `posthog/*` models, `OPENAI_API_KEY` for `openai/*` models), and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
