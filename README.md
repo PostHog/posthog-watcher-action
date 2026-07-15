@@ -361,7 +361,44 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 `mode: pr-review` posts a CodeRabbit-style code review on a pull request: a summary comment with a verdict (`clean`, `comment`, or `changes_requested`), inline diff comments for each finding, and read-only replies to follow-up questions on its review threads. It is opt-in via `allow-pr-review: true`.
 
-Only **same-repo** pull requests are reviewed. Fork PRs are always skipped so the model API key is never exposed to untrusted code — the example `.github/workflows/pr-review.yml` also guards the job with `if: github.event.pull_request.head.repo.full_name == github.repository`.
+Only **same-repo** pull requests are reviewed. Fork PRs are always skipped so the model API key is never exposed to untrusted code; guard the job with `if: github.event.pull_request.head.repo.full_name == github.repository` as well so fork events never start a run.
+
+Example workflow:
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review_comment:
+    types: [created]
+
+# Review-comment payloads also carry pull_request, so keying on the PR number
+# alone would let any comment cancel an in-flight review. Push runs share one
+# group per PR (a new push supersedes the stale review); each comment run gets
+# its own group and never cancels anything.
+concurrency:
+  group: posthog-watcher-pr-review-${{ github.event.pull_request.number }}-${{ github.event.comment.id || 'review' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pr-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: PostHog/posthog-watcher-action@main
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: pr-review
+          allow-pr-review: 'true'
+```
 
 Behavior:
 
