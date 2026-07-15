@@ -24453,7 +24453,7 @@ function isPosthogModel(model) {
 }
 async function runPi(options) {
   if (options.inputs.model.startsWith("openai-codex/")) {
-    throw new Error("The openai-codex/* provider is not supported by this GitHub Action because it only configures API keys, not Codex OAuth. Use a PostHog gateway model such as posthog/claude-opus-4-8 or an OpenAI API model such as openai/gpt-5.6-terra:high.");
+    throw new Error("The openai-codex/* provider is not supported by this GitHub Action because it only configures API keys, not Codex OAuth. Use a PostHog gateway model such as posthog/claude-opus-4-8 or an OpenAI API model such as openai/gpt-5.5:high.");
   }
   const attempts = options.inputs.piRetries + 1;
   let lastError;
@@ -24633,9 +24633,9 @@ var CREDENTIAL_VALUE_PATTERNS = [
   { reason: "token", pattern: /\bauthorization\s*:\s*bearer\s+([^\s"'`,;\])}]+)/i },
   { reason: "credential", pattern: /\b(?:api[_ -]?key|client[_ -]?secret|secret|credential|password)\b\s*(?:[:=]|=>)\s*["'`]?([^\s"'`,;\])}]+)/i }
 ];
-function assessIssueSecurity(issue2, commentMarker) {
+function assessIssueSecurity(issue2) {
   const labelHaystack = issue2.labels.join("\n");
-  const textHaystack = [issue2.title, issue2.body, ...issue2.comments.filter((comment) => !isWatcherGeneratedComment(comment, commentMarker)).map((comment) => comment.body)].join("\n");
+  const textHaystack = [issue2.title, issue2.body, ...issue2.comments.filter((comment) => !isWatcherGeneratedComment(comment)).map((comment) => comment.body)].join("\n");
   const reasons = /* @__PURE__ */ new Set();
   for (const { reason, pattern } of SECURITY_REPORT_PATTERNS) {
     if (pattern.test(labelHaystack) || pattern.test(textHaystack)) reasons.add(reason);
@@ -24680,8 +24680,8 @@ function looksLikeCredentialValue(value) {
   const characterClasses = [/[a-z]/, /[A-Z]/, /\d/, /[._~+/=-]/].filter((pattern) => pattern.test(normalized)).length;
   return characterClasses >= 2;
 }
-function isWatcherGeneratedComment(comment, commentMarker) {
-  return comment.author.endsWith("[bot]") && comment.body.includes(commentMarker);
+function isWatcherGeneratedComment(comment) {
+  return comment.author.endsWith("[bot]") && comment.body.includes("posthog-watcher-action");
 }
 function term(value) {
   return { reason: value, pattern: new RegExp(`\\b${escapeRegExp(value)}\\b`, "i") };
@@ -24732,7 +24732,7 @@ async function replyToCommand(octokit, issueNumber, inputs, command, questionOve
       url: issue2.data.html_url,
       labels,
       comments: []
-    }, inputs.commentMarker);
+    });
     if (security.sensitive && !inputs.allowSecurityAi) {
       body += "This item looks security-sensitive, so watcher did not send it to pi/OpenAI. Human review is required.";
     } else {
@@ -24977,8 +24977,8 @@ function formatCloseProposal(triage) {
 }
 
 // src/code-files.ts
-var CODE_FILE_PATTERN = /(?:^|\/)(?:Dockerfile(?:\..+)?|Makefile|CMakeLists\.txt)$|\.(c|cc|clj|cljs|cmake|cpp|cs|css|dart|ex|exs|fs|fsx|go|gradle|h|hpp|html|java|js|json|jsonc|jsx|kt|kts|lua|m|mm|php|pl|properties|proto|py|r|rb|rs|scala|sh|sql|swift|toml|ts|tsx|vue|xml|yml|yaml)$/i;
-var DOCS_ONLY_PATTERN = /(^|\/)docs?\/|\.mdx?$/i;
+var CODE_FILE_PATTERN = /\.(c|cc|cpp|cs|css|dart|go|h|hpp|java|js|jsx|kt|kts|m|mm|py|rb|rs|sh|swift|ts|tsx|vue|yml|yaml)$/i;
+var DOCS_ONLY_PATTERN = /(^|\/)(docs?|examples?)\/|\.mdx?$/i;
 function isReviewableCodeFile(file) {
   return CODE_FILE_PATTERN.test(file) && !DOCS_ONLY_PATTERN.test(file);
 }
@@ -25009,7 +25009,7 @@ async function reviewCommit(inputs) {
     tools: ["read", "grep", "find", "ls"],
     prompt: `Review commit ${sha} for narrow, actionable regressions.
 
-This is a manual commit review for the current repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed.
+This is a manual commit review for a PostHog SDK repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed.
 
 Changed code files:
 ${codeFiles.map((file) => `- ${file}`).join("\n")}
@@ -26034,7 +26034,7 @@ function getInputs() {
     posthogCodePollIntervalMs: parsePositiveInt(getInput("posthog-code-poll-interval-ms") || "15000", "posthog-code-poll-interval-ms"),
     posthogCodeTimeoutMs: parsePositiveInt(getInput("posthog-code-timeout-ms") || "1800000", "posthog-code-timeout-ms"),
     githubToken: required("github-token"),
-    model: getInput("model") || "openai/gpt-5.6-terra:high",
+    model: getInput("model") || "openai/gpt-5.5:high",
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, "issue-number") : void 0,
     mode,
     allowFix: parseBoolean(getInput("allow-fix")),
@@ -26082,7 +26082,7 @@ function getInputs() {
     stateRepo: getInput("state-repo"),
     stateBranch: getInput("state-branch") || "posthog-watcher-state",
     commentMarker: getInput("comment-marker") || "<!-- posthog-watcher-action -->",
-    piVersion: getInput("pi-version") || "0.80.7"
+    piVersion: getInput("pi-version") || "0.80.3"
   };
 }
 function required(name) {
@@ -26712,7 +26712,7 @@ function buildReviewPrompt(pr, files, diff) {
   const fileList = files.map((file) => `- ${file.filename} (${file.status ?? "modified"})`).join("\n");
   return `Review pull request #${pr.number}: ${pr.title}
 
-This is a code review for the current repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed: only report issues you are confident about (bugs, correctness, security, clear maintainability problems). Do not nitpick style. Use the read/grep/find/ls tools to inspect surrounding code before commenting. Do not modify files and do not make GitHub API calls.
+This is a code review for a PostHog SDK repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed: only report issues you are confident about (bugs, correctness, security, clear maintainability problems). Do not nitpick style. Use the read/grep/find/ls tools to inspect surrounding code before commenting. Do not modify files and do not make GitHub API calls.
 
 Only comment on lines that are part of this diff. Report the line number using the NEW file's line numbering (the right side of the diff).
 
@@ -27446,7 +27446,7 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
   const repositoryLabelNames = repositoryLabels.map((label) => label.name);
   const allowedExistingLabels = allowedRepositoryLabels(inputs.labelAllowlist, repositoryLabels, inputs.managedLabelPrefix);
   const allowedExistingLabelNames = allowedExistingLabels.map((label) => label.name);
-  const security = assessIssueSecurity(issue2, inputs.commentMarker);
+  const security = assessIssueSecurity(issue2);
   if (security.sensitive) {
     warning(`Security-sensitive issue detected. Reasons: ${security.reasons.join(", ")}`);
   }
