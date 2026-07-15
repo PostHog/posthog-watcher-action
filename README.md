@@ -70,7 +70,7 @@ jobs:
           sudo apt-get install -y fd-find ripgrep
           sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
 
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -82,7 +82,7 @@ jobs:
 To route through the PostHog LLM gateway instead of OpenAI, pick a `posthog/*` model and supply `posthog-api-key` (a `pha_` OAuth access token) in place of `openai-api-key`:
 
 ```yaml
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -101,7 +101,7 @@ Instead of running the local `pi` repair loop, the action can hand the whole fix
 > **The `posthog-code` executor bypasses this action's fix guardrails.** PostHog Code owns the agent loop, branch, commits, and PR in this mode, so none of the following apply to delegated fixes: the bounded repair loop, `reproduction-command`/`require-reproduction` reproduction-first checks, `validation-command`, `max-changed-files`/`max-diff-lines` diff guardrails, the independent read-only review gate, GitHub-signed Verified commits, `.github/pull_request_template.md` composition, and the `posthog-watcher/issue-N` branch naming. Review delegated PRs with the same scrutiny as any external contribution. The default executor stays `pi`, which keeps all guardrails.
 
 ```yaml
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }} # pha_ gateway token, used for triage
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -171,7 +171,7 @@ You can also generate an installation token before running the action:
     app-id: ${{ secrets.POSTHOG_WATCHER_APP_ID }}
     private-key: ${{ secrets.POSTHOG_WATCHER_APP_PRIVATE_KEY }}
 
-- uses: PostHog/posthog-watcher-action@v0
+- uses: PostHog/posthog-watcher-action@main
   with:
     openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
     github-token: ${{ steps.app-token.outputs.token }}
@@ -328,7 +328,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: enqueue
@@ -368,7 +368,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fd-find ripgrep
           sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -531,4 +531,23 @@ pnpm install
 pnpm build
 ```
 
-`dist/index.js` is generated and should be committed for GitHub Actions usage.
+`dist/` (`dist/index.js` and `dist/posthog-provider.js`) is the generated bundle the
+action runs from. Pull requests must **not** modify it (CI enforces this) — the
+`Sync dist` workflow rebuilds it from source and commits it back to `main` after every
+merge, so `main` always carries a bundle built from the exact merged source. Run
+`pnpm build` locally only when you want to test the compiled action.
+
+Consumers pin `@main`. Right after a source merge there is a brief window until
+`Sync dist`'s `chore: rebuild dist` commit lands in which `main` still carries the
+previous bundle; runs starting in that window use the prior build. If a push run was
+skipped (for example a merge message containing `[skip ci]`), trigger `Sync dist`
+manually via workflow dispatch. If you later cut release tags, point them at a commit
+whose `dist/` is current — normally the rebuild commit, not the merge commit before it.
+
+`Sync dist` creates its commit through GitHub's commit API (`planetscale/ghcommit-action`),
+so it is signed by GitHub and shows as Verified — satisfying a required-signatures branch
+rule. If `main` is otherwise protected (required PRs or status checks), the committing
+token still needs a bypass: when the `POSTHOG_WATCHER_APP_ID` /
+`POSTHOG_WATCHER_APP_PRIVATE_KEY` secrets are configured it mints a GitHub App
+installation token (grant that App a branch-protection bypass for `main`); otherwise it
+falls back to `GITHUB_TOKEN`, which cannot commit to a protected branch.

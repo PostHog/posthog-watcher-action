@@ -1,0 +1,80 @@
+name: Sync dist
+
+on:
+  push:
+    branches: [main]
+  # Manual fallback: recover dist freshness when a push run was skipped
+  # (e.g. a merge commit message containing [skip ci]) or failed.
+  workflow_dispatch:
+
+concurrency:
+  group: sync-dist
+  cancel-in-progress: true # only the newest main state matters
+
+permissions:
+  contents: write
+
+jobs:
+  sync-dist:
+    name: Sync dist
+    # Skip the push triggered by this workflow's own rebuild commit. The commit
+    # message intentionally omits [skip ci] so CI still validates the exact
+    # commit consumers fetch from main (when pushed with an App token; pushes
+    # made with the default GITHUB_TOKEN never trigger workflows).
+    if: "github.event_name == 'workflow_dispatch' || github.event.head_commit.message != 'chore: rebuild dist'"
+    runs-on: ubuntu-latest
+    env:
+      # The secrets context is not available in step-level `if:`; expose the
+      # App id through env so the conditional below can test it.
+      POSTHOG_WATCHER_APP_ID: ${{ secrets.POSTHOG_WATCHER_APP_ID }}
+    steps:
+      # Mint a GitHub App installation token when the App is configured; it can be
+      # granted a branch-protection bypass for main. Falls back to GITHUB_TOKEN
+      # (which cannot push to a protected main) when the App secrets are absent.
+      - name: Generate app token
+        id: app-token
+        if: ${{ env.POSTHOG_WATCHER_APP_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.POSTHOG_WATCHER_APP_ID }}
+          private-key: ${{ secrets.POSTHOG_WATCHER_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          build: 'true'
+
+      - name: Check for dist changes
+        id: dist
+        run: |
+          if [[ -z "$(git status --porcelain -- dist)" ]]; then
+            echo "commit=false" >> "$GITHUB_OUTPUT"
+            echo "dist already up to date"
+            exit 0
+          fi
+          # If main moved on while we were building, this run's dist no longer
+          # matches main's tip; the newer push re-triggers this workflow, so
+          # treat this run as superseded instead of committing a stale bundle.
+          git fetch origin main
+          if [[ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD)" ]]; then
+            echo "commit=false" >> "$GITHUB_OUTPUT"
+            echo "main moved on; a newer Sync dist run will rebuild from it"
+            exit 0
+          fi
+          echo "commit=true" >> "$GITHUB_OUTPUT"
+
+      # Commit through GitHub's commit API so the commit is signed by GitHub
+      # and shows as Verified, satisfying the required-signatures branch rule.
+      - name: Commit dist
+        if: steps.dist.outputs.commit == 'true'
+        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
+        with:
+          commit_message: 'chore: rebuild dist'
+          repo: ${{ github.repository }}
+          branch: main
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}

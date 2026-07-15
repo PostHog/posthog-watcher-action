@@ -6,6 +6,10 @@ inputs:
     description: Whether to install dependencies
     required: false
     default: 'true'
+  build:
+    description: Whether to build the action bundle
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -34,4 +38,9 @@ runs:
     - name: Install dependencies
       if: inputs.install == 'true'
       run: pnpm install --frozen-lockfile
+      shell: bash
+
+    - name: Build
+      if: inputs.build == 'true'
+      run: pnpm build
       shell: bash
