@@ -33,6 +33,10 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup
+        with:
+          # The test glob includes the smoke tests, which boot dist/; build so
+          # they run against the PR's source instead of the committed bundle.
+          build: 'true'
 
       - name: Test
         run: pnpm test
