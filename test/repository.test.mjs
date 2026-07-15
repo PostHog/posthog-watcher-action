@@ -23,11 +23,23 @@ test('pnpm supply-chain policy is configured', () => {
   assert.match(workspace, /trustPolicy: no-downgrade/);
 });
 
-test('readme declares experimental PostHog SDK scope', () => {
+test('readme declares generic repository scope', () => {
   const readme = read('README.md');
   assert.match(readme, /Experimental \/ WIP/);
-  assert.match(readme, /PostHog SDK repositories/);
+  assert.match(readme, /across languages and project types/);
+  assert.doesNotMatch(readme, /meant for triaging PostHog SDK repositories/);
   assert.match(readme, /Allow GitHub Actions to create and approve pull requests/);
+});
+
+test('commit review is repository and language agnostic', () => {
+  const source = read('src/commit-review.ts');
+  assert.doesNotMatch(source, /PostHog SDK repository/);
+  assert.match(source, /current repository/);
+  assert.match(source, /Dockerfile/);
+  assert.match(source, /Makefile/);
+  assert.match(source, /php/);
+  assert.match(source, /scala/);
+  assert.doesNotMatch(source, /docs\?\|examples\?/);
 });
 
 test('maintainer issue comment commands are documented', () => {
@@ -124,6 +136,7 @@ test('security policy uses word-boundary matching and credential evidence', () =
   assert.match(source, /CREDENTIAL_VALUE_PATTERNS/);
   assert.match(source, /looksLikeCredentialValue/);
   assert.match(source, /isWatcherGeneratedComment/);
+  assert.match(source, /commentMarker/);
   assert.match(source, /\\\\b/);
   assert.doesNotMatch(source, /haystack\.includes/);
   assert.match(index, /allowSecurityAi/);

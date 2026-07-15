@@ -61,7 +61,7 @@ export function getInputs(): ActionInputs {
   return {
     openaiApiKey: optionalSecret('openai-api-key'),
     githubToken: required('github-token'),
-    model: core.getInput('model') || 'openai/gpt-5.5:high',
+    model: core.getInput('model') || 'openai/gpt-5.6-terra:high',
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, 'issue-number') : undefined,
     mode,
     allowFix: parseBoolean(core.getInput('allow-fix')),
@@ -106,7 +106,7 @@ export function getInputs(): ActionInputs {
     stateRepo: core.getInput('state-repo'),
     stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',
     commentMarker: core.getInput('comment-marker') || '<!-- posthog-watcher-action -->',
-    piVersion: core.getInput('pi-version') || '0.80.3',
+    piVersion: core.getInput('pi-version') || '0.80.7',
   };
 }
 

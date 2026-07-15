@@ -11,8 +11,8 @@ export interface CommitReviewResult {
   response: string;
 }
 
-const CODE_FILE_PATTERN = /\.(c|cc|cpp|cs|css|dart|go|h|hpp|java|js|jsx|kt|kts|m|mm|py|rb|rs|sh|swift|ts|tsx|vue|yml|yaml)$/i;
-const DOCS_ONLY_PATTERN = /(^|\/)(docs?|examples?)\/|\.mdx?$/i;
+const CODE_FILE_PATTERN = /(?:^|\/)(?:Dockerfile(?:\..+)?|Makefile|CMakeLists\.txt)$|\.(c|cc|clj|cljs|cmake|cpp|cs|css|dart|ex|exs|fs|fsx|go|gradle|h|hpp|html|java|js|json|jsonc|jsx|kt|kts|lua|m|mm|php|pl|properties|proto|py|r|rb|rs|scala|sh|sql|swift|toml|ts|tsx|vue|xml|yml|yaml)$/i;
+const DOCS_ONLY_PATTERN = /(^|\/)docs?\/|\.mdx?$/i;
 
 export async function reviewCommit(inputs: ActionInputs): Promise<CommitReviewResult> {
   const sha = inputs.commitSha ?? github.context.sha;
@@ -42,7 +42,7 @@ export async function reviewCommit(inputs: ActionInputs): Promise<CommitReviewRe
     tools: ['read', 'grep', 'find', 'ls'],
     prompt: `Review commit ${sha} for narrow, actionable regressions.
 
-This is a manual commit review for a PostHog SDK repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed.
+This is a manual commit review for the current repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed.
 
 Changed code files:
 ${codeFiles.map((file) => `- ${file}`).join('\n')}
