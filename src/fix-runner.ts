@@ -4,6 +4,7 @@ import { createDraftPullRequest, defaultBranch, ensureTeamReviewRequested, findO
 import { git } from './git.js';
 import type { ActionInputs } from './inputs.js';
 import type { IssueSnapshot } from './issue-context.js';
+import { cloudModelFromPiModel } from './posthog-code-client.js';
 import { delegateFixToPostHogCode } from './posthog-code-fix-runner.js';
 import { runIssueRepair } from './repair-run.js';
 import { commitChangesWithGitHubSignature } from './signed-commit.js';
@@ -17,7 +18,7 @@ export async function maybeCreateFixPr(octokit: Octokit, issue: IssueSnapshot, t
     // opens the PR itself, so the local checkout/repair/guardrail/signed
     // commit path below is bypassed entirely.
     if (inputs.dryRun) {
-      core.info(`[dry-run] Would delegate the fix for #${issue.number} to PostHog Code cloud (${inputs.posthogCodeModel}).`);
+      core.info(`[dry-run] Would delegate the fix for #${issue.number} to PostHog Code cloud (${cloudModelFromPiModel(inputs.model)}).`);
       return undefined;
     }
     return delegateFixToPostHogCode(octokit, issue, triage, inputs, trustedInstructions);

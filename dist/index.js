@@ -25137,6 +25137,20 @@ var PostHogCodeClient = class {
     return text ? JSON.parse(text) : void 0;
   }
 };
+var DEFAULT_CLOUD_MODEL = "claude-opus-4-8";
+var TASK_API_HOSTS = {
+  us: "https://us.posthog.com",
+  eu: "https://eu.posthog.com",
+  dev: "http://localhost:8010"
+};
+function taskApiHostForRegion(region) {
+  return TASK_API_HOSTS[region] ?? "https://us.posthog.com";
+}
+function cloudModelFromPiModel(model) {
+  if (!model.startsWith("posthog/")) return DEFAULT_CLOUD_MODEL;
+  const id = (model.slice("posthog/".length).split(":")[0] ?? "").trim();
+  return id || DEFAULT_CLOUD_MODEL;
+}
 var PR_URL_PATTERN = /https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
 function findPullRequestUrl(...values) {
   for (const value of values) {
@@ -25154,16 +25168,17 @@ function parsePullRequestNumber(url) {
 
 // src/posthog-code-fix-runner.ts
 async function delegateFixToPostHogCode(octokit, issue2, triage, inputs, trustedInstructions = "") {
-  const client = new PostHogCodeClient(inputs.posthogCodeApiKey, inputs.posthogCodeProjectId, inputs.posthogCodeHost);
+  const client = new PostHogCodeClient(inputs.posthogCodeApiKey, inputs.posthogCodeProjectId, taskApiHostForRegion(inputs.posthogRegion));
+  const model = cloudModelFromPiModel(inputs.model);
   const repository = `${issue2.owner}/${issue2.repo}`;
   const task = await client.createTask({
     title: `Fix #${issue2.number}: ${issue2.title.slice(0, 80)}`,
     description: buildTaskDescription(issue2, triage, trustedInstructions),
     repository
   });
-  const started = await client.startRun(task.id, { runtimeAdapter: inputs.posthogCodeRuntimeAdapter, model: inputs.posthogCodeModel });
+  const started = await client.startRun(task.id, { runtimeAdapter: inputs.posthogCodeRuntimeAdapter, model });
   let run = started.latest_run ?? null;
-  info(`Delegated fix for #${issue2.number} to PostHog Code task ${task.id} run ${run?.id ?? "(pending)"} (${repository}, model ${inputs.posthogCodeModel}).`);
+  info(`Delegated fix for #${issue2.number} to PostHog Code task ${task.id} run ${run?.id ?? "(pending)"} (${repository}, model ${model}).`);
   const deadline = Date.now() + inputs.posthogCodeTimeoutMs;
   while (!run?.status || !TERMINAL_RUN_STATUSES.has(run.status)) {
     if (Date.now() >= deadline) {
@@ -25767,7 +25782,7 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs, trustedInstruct
   if (!shouldAttemptFix(triage, inputs)) return void 0;
   if (inputs.fixExecutor === "posthog-code") {
     if (inputs.dryRun) {
-      info(`[dry-run] Would delegate the fix for #${issue2.number} to PostHog Code cloud (${inputs.posthogCodeModel}).`);
+      info(`[dry-run] Would delegate the fix for #${issue2.number} to PostHog Code cloud (${cloudModelFromPiModel(inputs.model)}).`);
       return void 0;
     }
     return delegateFixToPostHogCode(octokit, issue2, triage, inputs, trustedInstructions);
@@ -25899,8 +25914,6 @@ function getInputs() {
     fixExecutor: normalizeFixExecutor(getInput("fix-executor") || "pi"),
     posthogCodeApiKey: optionalSecret("posthog-code-api-key"),
     posthogCodeProjectId: getInput("posthog-code-project-id"),
-    posthogCodeHost: getInput("posthog-code-host") || "https://us.posthog.com",
-    posthogCodeModel: getInput("posthog-code-model") || "claude-opus-4-8",
     posthogCodeRuntimeAdapter: getInput("posthog-code-runtime-adapter") || "claude",
     posthogCodePollIntervalMs: parsePositiveInt(getInput("posthog-code-poll-interval-ms") || "15000", "posthog-code-poll-interval-ms"),
     posthogCodeTimeoutMs: parsePositiveInt(getInput("posthog-code-timeout-ms") || "1800000", "posthog-code-timeout-ms"),

@@ -14,8 +14,6 @@ export interface ActionInputs {
   fixExecutor: FixExecutor;
   posthogCodeApiKey: string;
   posthogCodeProjectId: string;
-  posthogCodeHost: string;
-  posthogCodeModel: string;
   posthogCodeRuntimeAdapter: string;
   posthogCodePollIntervalMs: number;
   posthogCodeTimeoutMs: number;
@@ -79,8 +77,6 @@ export function getInputs(): ActionInputs {
     fixExecutor: normalizeFixExecutor(core.getInput('fix-executor') || 'pi'),
     posthogCodeApiKey: optionalSecret('posthog-code-api-key'),
     posthogCodeProjectId: core.getInput('posthog-code-project-id'),
-    posthogCodeHost: core.getInput('posthog-code-host') || 'https://us.posthog.com',
-    posthogCodeModel: core.getInput('posthog-code-model') || 'claude-opus-4-8',
     posthogCodeRuntimeAdapter: core.getInput('posthog-code-runtime-adapter') || 'claude',
     posthogCodePollIntervalMs: parsePositiveInt(core.getInput('posthog-code-poll-interval-ms') || '15000', 'posthog-code-poll-interval-ms'),
     posthogCodeTimeoutMs: parsePositiveInt(core.getInput('posthog-code-timeout-ms') || '1800000', 'posthog-code-timeout-ms'),

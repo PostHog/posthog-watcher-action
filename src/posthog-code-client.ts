@@ -92,6 +92,32 @@ export class PostHogCodeClient {
   }
 }
 
+export const DEFAULT_CLOUD_MODEL = 'claude-opus-4-8';
+
+const TASK_API_HOSTS: Record<string, string> = {
+  us: 'https://us.posthog.com',
+  eu: 'https://eu.posthog.com',
+  dev: 'http://localhost:8010',
+};
+
+/** Map the existing posthog-region input onto the tasks REST API host. */
+export function taskApiHostForRegion(region: string): string {
+  return TASK_API_HOSTS[region] ?? 'https://us.posthog.com';
+}
+
+/**
+ * Derive the cloud run model from the existing pi model input. posthog/*
+ * gateway ids match PostHog Code cloud model ids once the provider prefix
+ * and :reasoning suffix are stripped (posthog/claude-opus-4-8:high ->
+ * claude-opus-4-8). Other providers (openai/*) are not PostHog Code cloud
+ * models, so delegated runs fall back to the default cloud model.
+ */
+export function cloudModelFromPiModel(model: string): string {
+  if (!model.startsWith('posthog/')) return DEFAULT_CLOUD_MODEL;
+  const id = (model.slice('posthog/'.length).split(':')[0] ?? '').trim();
+  return id || DEFAULT_CLOUD_MODEL;
+}
+
 const PR_URL_PATTERN = /https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
 
 /** Scan run output / task payloads for the first GitHub PR URL. */

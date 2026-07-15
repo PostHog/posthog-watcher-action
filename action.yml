@@ -12,7 +12,7 @@ inputs:
     required: false
     default: ''
   posthog-region:
-    description: PostHog Cloud region for the LLM gateway (us, eu, or dev). Only used with posthog/* models.
+    description: PostHog Cloud region (us, eu, or dev). Used with posthog/* models for the LLM gateway, and with fix-executor posthog-code to pick the PostHog Code tasks REST API host.
     required: false
     default: 'us'
   openai-api-key:
@@ -28,17 +28,9 @@ inputs:
     required: false
     default: ''
   posthog-code-project-id:
-    description: PostHog project id for the PostHog Code tasks REST API. Required when fix-executor is posthog-code.
+    description: PostHog project id for the PostHog Code tasks REST API. Required when fix-executor is posthog-code. The API host comes from posthog-region and the cloud model from the model input (posthog/* ids map directly; other providers fall back to claude-opus-4-8).
     required: false
     default: ''
-  posthog-code-host:
-    description: PostHog Cloud host for the PostHog Code tasks REST API, for example https://us.posthog.com or https://eu.posthog.com.
-    required: false
-    default: 'https://us.posthog.com'
-  posthog-code-model:
-    description: Model for delegated PostHog Code cloud runs. The run API requires a model.
-    required: false
-    default: 'claude-opus-4-8'
   posthog-code-runtime-adapter:
     description: PostHog Code runtime adapter for delegated cloud runs.
     required: false

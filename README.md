@@ -103,9 +103,10 @@ Instead of running the local `pi` repair loop, the action can hand the whole fix
 ```yaml
       - uses: PostHog/posthog-watcher-action@v0
         with:
-          openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }} # still used for triage
+          posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }} # pha_ gateway token, used for triage
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ inputs['issue-number'] }}
+          model: posthog/claude-opus-4-8
           allow-fix: 'true'
           fix-executor: posthog-code
           posthog-code-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_CODE_API_KEY }} # phx_ personal API key
@@ -116,6 +117,7 @@ Prerequisites and notes:
 
 - The target repository must be connected to PostHog Code in your PostHog project so its cloud sandbox can clone, push a branch, and open the PR.
 - `posthog-code-api-key` is a **personal API key** (`phx_...`) with task scope. It is a different credential from `posthog-api-key`, which is a `pha_` OAuth token for the LLM gateway; the two are not interchangeable.
+- Delegation reuses the existing repo configuration: `posthog-region` picks the tasks API host (`us` → `https://us.posthog.com`, `eu` → `https://eu.posthog.com`), and the `model` input picks the cloud model — `posthog/*` ids map directly (`posthog/claude-opus-4-8:high` → `claude-opus-4-8`), while other providers (`openai/*`) fall back to `claude-opus-4-8` because they are not PostHog Code cloud models.
 - Cloud runs take minutes; the job stays alive polling until the run finishes or `posthog-code-timeout-ms` elapses (then the action requests cancellation).
 - `fix-pr-review-team` still applies: the action requests team review on the PR PostHog Code opened.
 
@@ -389,13 +391,11 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | --- | --- | --- |
 | `openai-api-key` | required for `openai/*` models except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
 | `posthog-api-key` | required for `posthog/*` models except `enqueue` | PostHog OAuth access token (`pha_...`) used by `pi` against the PostHog LLM gateway. Personal API keys (`phx_...`) are **not** accepted by the gateway. Tokens are minted by a PostHog OAuth login (for example PostHog Code or `@posthog/harness` `/login`) and expire after about a week, so rotate the secret. `enqueue` mode does not call `pi` and may omit it. |
-| `posthog-region` | `us` | PostHog Cloud region for the LLM gateway: `us`, `eu`, or `dev`. Only used with `posthog/*` models. |
+| `posthog-region` | `us` | PostHog Cloud region: `us`, `eu`, or `dev`. Used with `posthog/*` models for the LLM gateway, and with `fix-executor: posthog-code` to pick the PostHog Code tasks REST API host. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, PRs, and optional state. |
 | `fix-executor` | `pi` | Fix execution engine: `pi` runs the guarded local repair loop; `posthog-code` delegates the whole fix to PostHog Code's cloud sandbox, **bypassing this action's fix guardrails** (see [Delegating fixes to PostHog Code](#delegating-fixes-to-posthog-code-cloud)). |
 | `posthog-code-api-key` | required when `fix-executor: posthog-code` | PostHog **personal API key** (`phx_...`) for the PostHog Code tasks REST API. Not the same credential as `posthog-api-key`. |
-| `posthog-code-project-id` | required when `fix-executor: posthog-code` | PostHog project id for the PostHog Code tasks REST API. |
-| `posthog-code-host` | `https://us.posthog.com` | PostHog Cloud host for the PostHog Code tasks REST API (`https://eu.posthog.com` for EU cloud). |
-| `posthog-code-model` | `claude-opus-4-8` | Model for delegated PostHog Code cloud runs; the run API requires one. |
+| `posthog-code-project-id` | required when `fix-executor: posthog-code` | PostHog project id for the PostHog Code tasks REST API. The API host comes from `posthog-region` and the cloud model from `model` (`posthog/*` ids map directly; other providers fall back to `claude-opus-4-8`). |
 | `posthog-code-runtime-adapter` | `claude` | PostHog Code runtime adapter for delegated cloud runs. |
 | `posthog-code-poll-interval-ms` | `15000` | Poll interval while waiting for a delegated run to finish. |
 | `posthog-code-timeout-ms` | `1800000` | Overall timeout for a delegated run before the action requests cancellation. |

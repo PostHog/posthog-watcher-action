@@ -4,13 +4,27 @@ import test from 'node:test';
 import { transform } from 'esbuild';
 
 const { code } = await transform(readFileSync('src/posthog-code-client.ts', 'utf8'), { loader: 'ts', format: 'esm' });
-const { PostHogCodeClient, TERMINAL_RUN_STATUSES, findPullRequestUrl, parsePullRequestNumber } = await import(
+const { PostHogCodeClient, TERMINAL_RUN_STATUSES, cloudModelFromPiModel, findPullRequestUrl, parsePullRequestNumber, taskApiHostForRegion } = await import(
   `data:text/javascript,${encodeURIComponent(code)}`
 );
 
 test('base url scopes requests to host and project id', () => {
   const client = new PostHogCodeClient('phx_test', '12345', 'https://us.posthog.com/');
   assert.equal(client.baseUrl, 'https://us.posthog.com/api/projects/12345');
+});
+
+test('tasks API host is derived from the existing posthog-region input', () => {
+  assert.equal(taskApiHostForRegion('us'), 'https://us.posthog.com');
+  assert.equal(taskApiHostForRegion('eu'), 'https://eu.posthog.com');
+  assert.equal(taskApiHostForRegion('dev'), 'http://localhost:8010');
+});
+
+test('cloud model is derived from the existing pi model input', () => {
+  assert.equal(cloudModelFromPiModel('posthog/claude-opus-4-8'), 'claude-opus-4-8');
+  assert.equal(cloudModelFromPiModel('posthog/claude-opus-4-8:high'), 'claude-opus-4-8');
+  // Non-posthog providers are not PostHog Code cloud models: fall back to the default.
+  assert.equal(cloudModelFromPiModel('openai/gpt-5.5:high'), 'claude-opus-4-8');
+  assert.equal(cloudModelFromPiModel('posthog/'), 'claude-opus-4-8');
 });
 
 test('terminal statuses cover completed, failed, and cancelled only', () => {

@@ -2,7 +2,7 @@ import * as core from '@actions/core';
 import { ensureTeamReviewRequested, type Octokit } from './github.js';
 import type { ActionInputs } from './inputs.js';
 import type { IssueSnapshot } from './issue-context.js';
-import { findPullRequestUrl, parsePullRequestNumber, PostHogCodeClient, TERMINAL_RUN_STATUSES, type PostHogCodeRun } from './posthog-code-client.js';
+import { cloudModelFromPiModel, findPullRequestUrl, parsePullRequestNumber, PostHogCodeClient, taskApiHostForRegion, TERMINAL_RUN_STATUSES, type PostHogCodeRun } from './posthog-code-client.js';
 import type { TriageResult } from './triage-schema.js';
 
 /**
@@ -14,7 +14,10 @@ import type { TriageResult } from './triage-schema.js';
  * commits, PR template) apply to the delegated run.
  */
 export async function delegateFixToPostHogCode(octokit: Octokit, issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs, trustedInstructions = ''): Promise<string | undefined> {
-  const client = new PostHogCodeClient(inputs.posthogCodeApiKey, inputs.posthogCodeProjectId, inputs.posthogCodeHost);
+  // Host and model reuse the existing repo configuration: posthog-region
+  // picks the cloud host, and the pi model input maps onto a cloud model.
+  const client = new PostHogCodeClient(inputs.posthogCodeApiKey, inputs.posthogCodeProjectId, taskApiHostForRegion(inputs.posthogRegion));
+  const model = cloudModelFromPiModel(inputs.model);
   const repository = `${issue.owner}/${issue.repo}`;
 
   const task = await client.createTask({
@@ -22,10 +25,10 @@ export async function delegateFixToPostHogCode(octokit: Octokit, issue: IssueSna
     description: buildTaskDescription(issue, triage, trustedInstructions),
     repository,
   });
-  const started = await client.startRun(task.id, { runtimeAdapter: inputs.posthogCodeRuntimeAdapter, model: inputs.posthogCodeModel });
+  const started = await client.startRun(task.id, { runtimeAdapter: inputs.posthogCodeRuntimeAdapter, model });
   // The run/ endpoint returns the parent task; the run id is latest_run.id.
   let run: PostHogCodeRun | null = started.latest_run ?? null;
-  core.info(`Delegated fix for #${issue.number} to PostHog Code task ${task.id} run ${run?.id ?? '(pending)'} (${repository}, model ${inputs.posthogCodeModel}).`);
+  core.info(`Delegated fix for #${issue.number} to PostHog Code task ${task.id} run ${run?.id ?? '(pending)'} (${repository}, model ${model}).`);
 
   const deadline = Date.now() + inputs.posthogCodeTimeoutMs;
   while (!run?.status || !TERMINAL_RUN_STATUSES.has(run.status)) {

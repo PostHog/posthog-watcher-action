@@ -504,6 +504,11 @@ test('posthog code fix delegation is wired behind fix-executor', () => {
   assert.match(client, /\/api\/projects\//);
   assert.match(client, /origin_product/);
   assert.match(client, /Authorization: `Bearer /);
+  // Host and model reuse existing repo configuration instead of new inputs.
+  assert.match(delegate, /taskApiHostForRegion\(inputs\.posthogRegion\)/);
+  assert.match(delegate, /cloudModelFromPiModel\(inputs\.model\)/);
+  assert.doesNotMatch(action, /posthog-code-host/);
+  assert.doesNotMatch(action, /posthog-code-model/);
   // The tasks API key is required for delegated fixes and scrubbed like other secrets.
   assert.match(index, /posthog-code-api-key and posthog-code-project-id are required/);
   assert.match(index, /inputs\.posthogCodeApiKey/);
