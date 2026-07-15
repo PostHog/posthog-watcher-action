@@ -256,7 +256,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
       for (const label of staleLabels) await removeLabel(octokit, issue.number, label);
       await addLabels(octokit, issue.number, managedLabels);
     }
-    const commentBody = redactSecrets(buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons, snapshotHash, sweepAttentionMention(inputs, issue.owner)), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken]);
+    const commentBody = redactSecrets(buildSecurityComment(inputs.commentMarker, issue, managedLabels, security.reasons, snapshotHash, sweepAttentionMention(inputs, issue.owner)), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken]);
     const commentUrl = inputs.dryRun ? '' : await upsertIssueComment(octokit, issue.number, inputs.commentMarker, commentBody);
     await writeStateRecord(octokit, inputs, {
       kind: 'issue',
@@ -346,7 +346,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
 
   const piSessionReference = await publishPiSessionFiles(octokit, inputs, `issue-${issue.number}`, piSessionStartIndex);
   const piSessionMarkdown = formatPiSessionMarkdown(piSessionReference);
-  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue.owner), piSessionMarkdown), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken]);
+  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue.owner), piSessionMarkdown), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken]);
   let commentUrl = '';
   if (inputs.dryRun) {
     core.info(`[dry-run] Would upsert issue comment:\n${commentBody}`);
@@ -396,7 +396,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
 
 async function updateIssueStatus(octokit: Octokit, inputs: ActionInputs, issue: IssueSnapshot, phase: string, detail: string, attentionMention?: string): Promise<void> {
   if (!inputs.progressComments) return;
-  const body = redactSecrets(buildStatusComment(inputs.commentMarker, issue, phase, detail, undefined, attentionMention), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken]);
+  const body = redactSecrets(buildStatusComment(inputs.commentMarker, issue, phase, detail, undefined, attentionMention), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken]);
   if (inputs.dryRun) {
     core.info(`[dry-run] Would update watcher status for #${issue.number}: ${phase} - ${detail}`);
     return;
@@ -603,6 +603,9 @@ function isPullRequestPayload(): boolean {
 }
 
 function requireModelApiKey(inputs: ActionInputs): void {
+  if (inputs.fixExecutor === 'posthog-code' && (!inputs.posthogCodeApiKey || !inputs.posthogCodeProjectId)) {
+    throw new Error('posthog-code-api-key and posthog-code-project-id are required when fix-executor is posthog-code. The key is a personal API key (phx_...), distinct from the pha_ gateway token in posthog-api-key.');
+  }
   if (isPosthogModel(inputs.model)) {
     if (!inputs.posthogApiKey) {
       throw new Error('posthog-api-key is required for posthog/* models in modes that process items with pi. It may be omitted only when mode is enqueue.');

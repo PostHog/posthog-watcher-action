@@ -19,6 +19,38 @@ inputs:
     description: OpenAI API key used by pi. Required for openai/* models except in enqueue mode.
     required: false
     default: ''
+  fix-executor:
+    description: Fix execution engine. pi runs the guarded local repair loop; posthog-code delegates the whole fix to PostHog Code's cloud sandbox, which opens the PR itself. WARNING - posthog-code bypasses this action's fix guardrails (repair loop, reproduction checks, max-changed-files/max-diff-lines, independent review gate, GitHub-signed commits, validation-command, PR template).
+    required: false
+    default: 'pi'
+  posthog-code-api-key:
+    description: PostHog personal API key (phx_...) for the PostHog Code tasks REST API. Required when fix-executor is posthog-code. This is a different credential from posthog-api-key (the pha_ LLM gateway token).
+    required: false
+    default: ''
+  posthog-code-project-id:
+    description: PostHog project id for the PostHog Code tasks REST API. Required when fix-executor is posthog-code.
+    required: false
+    default: ''
+  posthog-code-host:
+    description: PostHog Cloud host for the PostHog Code tasks REST API, for example https://us.posthog.com or https://eu.posthog.com.
+    required: false
+    default: 'https://us.posthog.com'
+  posthog-code-model:
+    description: Model for delegated PostHog Code cloud runs. The run API requires a model.
+    required: false
+    default: 'claude-opus-4-8'
+  posthog-code-runtime-adapter:
+    description: PostHog Code runtime adapter for delegated cloud runs.
+    required: false
+    default: 'claude'
+  posthog-code-poll-interval-ms:
+    description: Poll interval in milliseconds while waiting for a delegated PostHog Code run to finish.
+    required: false
+    default: '15000'
+  posthog-code-timeout-ms:
+    description: Overall timeout in milliseconds for a delegated PostHog Code run before the action requests cancellation.
+    required: false
+    default: '1800000'
   github-token:
     description: GitHub token for issue labels, comments, branches, and PRs
     required: false
