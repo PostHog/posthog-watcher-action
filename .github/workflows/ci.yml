@@ -37,18 +37,6 @@ jobs:
       - name: Test
         run: pnpm test
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Setup environment
-        uses: ./.github/actions/setup
-
-      - name: Build
-        run: pnpm build
-
   action-smoke-test:
     name: Action smoke test
     runs-on: ubuntu-latest
@@ -57,9 +45,26 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup
-
-      - name: Build
-        run: pnpm build
+        with:
+          build: 'true'
 
       - name: Smoke test bundled action
         run: node --test test/action-smoke.test.mjs
+
+  dist-unchanged:
+    name: Dist unchanged
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Check dist is untouched
+        run: |
+          if ! git diff --quiet "origin/${{ github.base_ref }}...HEAD" -- dist; then
+            echo "::error::Pull requests must not modify dist/ — it is rebuilt and committed on main by the Sync dist workflow."
+            git diff --stat "origin/${{ github.base_ref }}...HEAD" -- dist
+            exit 1
+          fi
+          echo "dist untouched"

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
 
 const read = (path) => readFileSync(path, 'utf8');
@@ -444,7 +444,10 @@ test('pi JSON output parser falls back to final assistant messages', () => {
 });
 
 test('workflow actions are pinned to full-length SHAs', () => {
-  const workflows = [read('.github/workflows/ci.yml'), read('.github/workflows/commit-review.yml'), read('.github/actions/setup/action.yml')].join('\n');
+  const workflowFiles = readdirSync('.github/workflows').map((name) => `.github/workflows/${name}`);
+  const compositeFiles = ['.github/actions/setup/action.yml'];
+  assert.ok(workflowFiles.length >= 4, 'expected all workflow files to be scanned');
+  const workflows = [...workflowFiles, ...compositeFiles].map(read).join('\n');
   assert.doesNotMatch(workflows, /uses:\s+[^\s]+@v\d/);
   assert.match(workflows, /actions\/checkout@[0-9a-f]{40}/);
 });

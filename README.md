@@ -442,10 +442,16 @@ pnpm build
 ```
 
 `dist/` (`dist/index.js` and `dist/posthog-provider.js`) is the generated bundle the
-action runs from. You do **not** need to build or commit it in pull requests — the
+action runs from. Pull requests must **not** modify it (CI enforces this) — the
 `Sync dist` workflow rebuilds it from source and commits it back to `main` after every
 merge, so `main` always carries a bundle built from the exact merged source. Run
 `pnpm build` locally only when you want to test the compiled action.
+
+When moving the `v0` release tag, point it at a commit whose `dist/` is current —
+normally `Sync dist`'s own `chore: rebuild dist` commit, not the merge commit it
+follows (the merge commit still carries the previous bundle). If a push run was
+skipped (for example a merge message containing `[skip ci]`), trigger `Sync dist`
+manually via workflow dispatch.
 
 If `main` is protected, `Sync dist` needs a token allowed to push to it. When the
 `POSTHOG_WATCHER_APP_ID` / `POSTHOG_WATCHER_APP_PRIVATE_KEY` secrets are configured it

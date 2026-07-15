@@ -3,6 +3,9 @@ name: Sync dist
 on:
   push:
     branches: [main]
+  # Manual fallback: recover dist freshness when a push run was skipped
+  # (e.g. a merge commit message containing [skip ci]) or failed.
+  workflow_dispatch:
 
 concurrency:
   group: sync-dist
@@ -14,15 +17,23 @@ permissions:
 jobs:
   sync-dist:
     name: Sync dist
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    # Skip the push triggered by this workflow's own rebuild commit. The commit
+    # message intentionally omits [skip ci] so CI still validates the exact
+    # commit consumers fetch from main (when pushed with an App token; pushes
+    # made with the default GITHUB_TOKEN never trigger workflows).
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message != 'chore: rebuild dist'
     runs-on: ubuntu-latest
+    env:
+      # The secrets context is not available in step-level `if:`; expose the
+      # App id through env so the conditional below can test it.
+      POSTHOG_WATCHER_APP_ID: ${{ secrets.POSTHOG_WATCHER_APP_ID }}
     steps:
       # Mint a GitHub App installation token when the App is configured; it can be
       # granted a branch-protection bypass for main. Falls back to GITHUB_TOKEN
       # (which cannot push to a protected main) when the App secrets are absent.
       - name: Generate app token
         id: app-token
-        if: ${{ secrets.POSTHOG_WATCHER_APP_ID != '' }}
+        if: ${{ env.POSTHOG_WATCHER_APP_ID != '' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.POSTHOG_WATCHER_APP_ID }}
@@ -35,18 +46,28 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup
-
-      - name: Build dist
-        run: pnpm build
+        with:
+          build: 'true'
 
       - name: Commit dist if changed
         run: |
-          if [[ -n "$(git status --porcelain -- dist)" ]]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add dist
-            git commit -m "chore: rebuild dist [skip ci]"
-            git push origin HEAD:main
-          else
+          if [[ -z "$(git status --porcelain -- dist)" ]]; then
             echo "dist already up to date"
+            exit 0
           fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist
+          git commit -m "chore: rebuild dist"
+          if git push origin HEAD:main; then
+            exit 0
+          fi
+          # Non-fast-forward is expected when another commit landed on main
+          # mid-run; the push event for that commit re-triggers this workflow,
+          # so treat it as superseded rather than failed.
+          git fetch origin main
+          if [[ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD^)" ]]; then
+            echo "main moved on; a newer Sync dist run will rebuild from it"
+            exit 0
+          fi
+          exit 1

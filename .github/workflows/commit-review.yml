@@ -32,9 +32,8 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup
-
-      - name: Build action
-        run: pnpm build
+        with:
+          build: 'true'
 
       - name: Review commit
         uses: ./
