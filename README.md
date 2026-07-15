@@ -357,6 +357,21 @@ If a queued item fails, its attempt count is incremented before processing. The 
 
 Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mode: commit-review`. They inspect one commit, write a workflow summary, and perform no labels, comments, PRs, or other GitHub mutations.
 
+## Pull request reviews
+
+`mode: pr-review` posts a CodeRabbit-style code review on a pull request: a summary comment with a verdict (`clean`, `comment`, or `changes_requested`), inline diff comments for each finding, and read-only replies to follow-up questions on its review threads. It is opt-in via `allow-pr-review: true`.
+
+Only **same-repo** pull requests are reviewed. Fork PRs are always skipped so the model API key is never exposed to untrusted code — the example `.github/workflows/pr-review.yml` also guards the job with `if: github.event.pull_request.head.repo.full_name == github.repository`.
+
+Behavior:
+
+- `pi` runs read-only (`read`, `grep`, `find`, `ls`) over the diff; it never edits files or calls the GitHub API.
+- Inline findings are validated against the diff — a finding whose line is not part of the change is dropped (never posted). If GitHub rejects the inline positions, the findings fall back into the summary comment.
+- The summary comment is upserted via a hidden marker (derived from `comment-marker`, so multiple watcher instances stay isolated); re-review on each push updates one comment instead of piling up. Inline findings carry a hidden fingerprint so the same finding is not re-posted on later pushes.
+- Any review comment — thread root or reply — that mentions the watcher without a fix command (for example `@posthog-watcher why is this unsafe?`) is answered read-only in the thread, with the thread's original finding as context.
+- `pr-review` mode is strictly read-only: fix commands (`fix`, `fix ci`, `address review`, `rebase`) and plain review comments are skipped with a logged conclusion instead of being routed to PR repair. Run a separate workflow with `mode: auto`/`fix` (and `contents: write`) for repair commands.
+- The same security gate that protects issues applies: a PR whose title/body looks security-sensitive, or whose title/body/diff contains real-looking credentials, is skipped unless `allow-security-ai: true`. The diff is only checked for credential evidence — code that merely mentions "security" is not flagged.
+
 ## Inputs
 
 | Input | Default | Description |
@@ -367,7 +382,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, PRs, and optional state. |
 | `model` | `openai/gpt-5.5:high` | pi model identifier with high thinking enabled. The prefix picks the provider: `openai/*` models call OpenAI directly, `posthog/*` models route through the PostHog LLM gateway (for example `posthog/claude-opus-4-8`). |
 | `issue-number` | event issue | Issue or PR number to process. |
-| `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `sweep`, `enqueue`, or `drain-queue`. |
+| `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `pr-review`, `sweep`, `enqueue`, or `drain-queue`. |
 | `allow-fix` | `false` | Allows draft PR creation or same-repo PR branch repair when guardrails pass. |
 | `require-fix-command` | `false` | If true, fixes are proposal-only until a trusted watcher fix command is posted. Default keeps automatic fixes enabled when `allow-fix: true`. |
 | `command-mention` | `@posthog-watcher` | GitHub mention that triggers issue-comment commands. Accepts values with or without `@`. |
@@ -388,6 +403,9 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `require-reproduction` | `false` | Require a failing reproduction before issue fix attempts; uses `reproduction-command`, or `validation-command` after `pi` adds a minimal regression check. |
 | `fix-pr-review-team` | empty | Optional team reviewer slug or `org/team` (for example `PostHog/team-client-libraries`) for generated fix PRs. Empty means no team review is requested. |
 | `commit-sha` | empty | Commit SHA to review in `commit-review` mode. |
+| `allow-pr-review` | `false` | Allows `pr-review` mode to post code reviews (summary comment plus inline diff comments) on same-repo pull requests. Fork PRs are always skipped. |
+| `max-review-files` | `30` | Maximum changed files to review in `pr-review` mode. |
+| `max-review-findings` | `20` | Maximum inline findings `pr-review` may post on a pull request. |
 | `max-sweep-items` | `10` | Maximum open issues to process in `sweep` mode. |
 | `max-sweep-fix-items` | `0` | Maximum sweep items that may attempt fixes. |
 | `sweep-query` | `is:issue is:open archived:false` | Search query suffix for `sweep` mode. |

@@ -6,6 +6,7 @@ export type WatcherCommand =
   | 'triage'
   | 'investigate'
   | 'review'
+  | 'pr-review-reply'
   | 'fix'
   | 'plan'
   | 'fix-ci'
@@ -36,9 +37,34 @@ interface ParsedWatcherCommand {
 
 export const TRUSTED_ASSOCIATIONS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
+// Single source of truth for "this command asks the watcher to edit code";
+// index.ts fix gates consume it too, so routing and gating cannot drift.
+export const FIX_INTENT_COMMANDS = new Set<WatcherCommand>(['fix', 'fix-ci', 'address-review', 'rebase']);
+
 export function resolveCommand(commandMention = configuredCommandMention()): CommandResolution {
   if (github.context.eventName === 'pull_request_review_comment') {
-    const actor = github.context.payload.sender?.login ?? 'unknown';
+    const payload = github.context.payload as {
+      sender?: { login?: string };
+      comment?: { body?: string; in_reply_to_id?: number };
+    };
+    const actor = payload.sender?.login ?? 'unknown';
+    const body = payload.comment?.body ?? '';
+
+    // Explicit fix intent keeps the existing PR-repair behavior.
+    const parsed = parseWatcherCommandDetails(body, commandMention);
+    if (parsed && FIX_INTENT_COMMANDS.has(parsed.command)) {
+      core.info(`Treating pull request review comment as ${commandMention} ${parsed.command}.`);
+      return { ...commandToResolution(parsed.command), actor, extraInstructions: parsed.extraInstructions, commandMention };
+    }
+
+    // Any review comment (thread root or reply) that mentions the watcher
+    // without a fix command is a question: answer it read-only in the thread
+    // rather than editing code.
+    if (bodyMentionsCommand(body, commandMention)) {
+      core.info(`Treating pull request review comment as a ${commandMention} review question.`);
+      return { ...commandToResolution('pr-review-reply'), actor, extraInstructions: body, commandMention };
+    }
+
     core.info(`Treating pull request review comment as ${commandMention} address review.`);
     return { ...commandToResolution('address-review'), actor, commandMention };
   }
@@ -86,6 +112,13 @@ export function resolveCommand(commandMention = configuredCommandMention()): Com
 
 export function parseWatcherCommand(body: string, commandMention = '@posthog-watcher'): WatcherCommand | undefined {
   return parseWatcherCommandDetails(body, commandMention)?.command;
+}
+
+export function bodyMentionsCommand(body: string, commandMention = '@posthog-watcher'): boolean {
+  // (?![\w-]) instead of \b: GitHub usernames may continue with a hyphen, so
+  // '@posthog-watcher-staging' must not count as a '@posthog-watcher' mention.
+  const mention = commandMentionPattern(commandMention);
+  return new RegExp(`(?:^|\\s)${mention}(?![\\w-])`, 'i').test(body);
 }
 
 export function parseWatcherCommandDetails(body: string, commandMention = '@posthog-watcher'): ParsedWatcherCommand | undefined {
@@ -148,6 +181,8 @@ function commandToResolution(command: WatcherCommand): CommandResolution {
     case 'investigate':
     case 'plan':
       return { shouldRun: true, command, mode: 'investigate' };
+    case 'pr-review-reply':
+      return { shouldRun: true, command, mode: 'pr-review' };
     case 'fix':
     case 'fix-ci':
     case 'address-review':

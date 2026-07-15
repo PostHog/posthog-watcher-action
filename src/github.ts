@@ -1,8 +1,24 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
+import type { PullRequestFile } from './diff-lines.js';
 import type { IssueSnapshot } from './issue-context.js';
 
 export type Octokit = ReturnType<typeof github.getOctokit>;
+
+export interface PullRequestSnapshot {
+  number: number;
+  title: string;
+  body: string;
+  url: string;
+  headRepoFullName?: string;
+  isSameRepo: boolean;
+}
+
+export interface ReviewComment {
+  path: string;
+  line: number;
+  body: string;
+}
 
 interface TeamReviewer {
   display: string;
@@ -162,6 +178,100 @@ export async function createDraftPullRequest(octokit: Octokit, params: {
     draft: true,
   });
   return { number: created.data.number, url: created.data.html_url };
+}
+
+export async function getPullRequestSnapshot(octokit: Octokit, pullNumber: number): Promise<PullRequestSnapshot> {
+  const { owner, repo } = github.context.repo;
+  const response = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+  const pr = response.data;
+  const headRepoFullName = pr.head.repo?.full_name ?? undefined;
+  return {
+    number: pr.number,
+    title: pr.title,
+    body: pr.body ?? '',
+    url: pr.html_url,
+    headRepoFullName,
+    isSameRepo: headRepoFullName === `${owner}/${repo}`,
+  };
+}
+
+// Bound pagination: past this many files/comments a review is hopeless anyway,
+// and unbounded paginate() burns API quota on exactly the largest PRs.
+const MAX_PAGINATED_ITEMS = 500;
+
+export async function listPullRequestFiles(octokit: Octokit, pullNumber: number): Promise<PullRequestFile[]> {
+  const { owner, repo } = github.context.repo;
+  const collected: PullRequestFile[] = [];
+  for await (const response of octokit.paginate.iterator(octokit.rest.pulls.listFiles, { owner, repo, pull_number: pullNumber, per_page: 100 })) {
+    for (const file of response.data as Array<{ filename: string; status?: string; patch?: string }>) {
+      collected.push({ filename: file.filename, status: file.status, patch: file.patch });
+    }
+    if (collected.length >= MAX_PAGINATED_ITEMS) {
+      core.warning(`PR #${pullNumber} changes more than ${MAX_PAGINATED_ITEMS} files; only the first ${MAX_PAGINATED_ITEMS} are considered.`);
+      break;
+    }
+  }
+  return collected;
+}
+
+export async function listReviewCommentBodies(octokit: Octokit, pullNumber: number): Promise<string[]> {
+  const { owner, repo } = github.context.repo;
+  const collected: string[] = [];
+  try {
+    for await (const response of octokit.paginate.iterator(octokit.rest.pulls.listReviewComments, { owner, repo, pull_number: pullNumber, per_page: 100 })) {
+      for (const comment of response.data as Array<{ body?: string }>) {
+        if (comment.body) collected.push(comment.body);
+      }
+      if (collected.length >= MAX_PAGINATED_ITEMS) break;
+    }
+  } catch (error) {
+    core.warning(`Could not list review comments for PR #${pullNumber}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return collected;
+}
+
+export async function getReviewComment(octokit: Octokit, commentId: number): Promise<{ path: string; body: string; diffHunk: string; inReplyToId?: number } | undefined> {
+  const { owner, repo } = github.context.repo;
+  try {
+    const response = await octokit.rest.pulls.getReviewComment({ owner, repo, comment_id: commentId });
+    return {
+      path: response.data.path,
+      body: response.data.body ?? '',
+      diffHunk: response.data.diff_hunk ?? '',
+      inReplyToId: response.data.in_reply_to_id ?? undefined,
+    };
+  } catch (error) {
+    core.warning(`Could not fetch review comment ${commentId}: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
+}
+
+// Post a review with an optional summary body and inline comments. Returns the
+// review URL. If GitHub rejects the inline comment positions, the caller is
+// expected to fall back to a body-only review.
+export async function createPullRequestReview(octokit: Octokit, pullNumber: number, params: { body: string; comments: ReviewComment[] }): Promise<string> {
+  const { owner, repo } = github.context.repo;
+  const created = await octokit.rest.pulls.createReview({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    event: 'COMMENT',
+    body: params.body,
+    comments: params.comments.map((comment) => ({ path: comment.path, line: comment.line, side: 'RIGHT', body: comment.body })),
+  });
+  return created.data.html_url;
+}
+
+export async function replyToReviewComment(octokit: Octokit, pullNumber: number, commentId: number, body: string): Promise<string> {
+  const { owner, repo } = github.context.repo;
+  const created = await octokit.rest.pulls.createReplyForReviewComment({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    comment_id: commentId,
+    body,
+  });
+  return created.data.html_url;
 }
 
 export async function ensureTeamReviewRequested(octokit: Octokit, pullNumber: number, reviewTeam: string): Promise<void> {
