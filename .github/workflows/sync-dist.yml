@@ -17,6 +17,9 @@ permissions:
 jobs:
   sync-dist:
     name: Sync dist
+    # The App credentials that let this job bypass main's branch protection live
+    # in the "Release" environment, so the job must run in it to read them.
+    environment: Release
     # Skip the push triggered by this workflow's own rebuild commit. The commit
     # message intentionally omits [skip ci] so CI still validates the exact
     # commit consumers fetch from main (when pushed with an App token; pushes
