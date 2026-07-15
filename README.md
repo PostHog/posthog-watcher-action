@@ -446,3 +446,9 @@ action runs from. You do **not** need to build or commit it in pull requests —
 `Sync dist` workflow rebuilds it from source and commits it back to `main` after every
 merge, so `main` always carries a bundle built from the exact merged source. Run
 `pnpm build` locally only when you want to test the compiled action.
+
+If `main` is protected, `Sync dist` needs a token allowed to push to it. When the
+`POSTHOG_WATCHER_APP_ID` / `POSTHOG_WATCHER_APP_PRIVATE_KEY` secrets are configured it
+mints a GitHub App installation token (grant that App a branch-protection bypass for
+`main`); otherwise it falls back to `GITHUB_TOKEN`, which cannot push to a protected
+branch.

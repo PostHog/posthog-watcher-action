@@ -17,9 +17,21 @@ jobs:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
     steps:
+      # Mint a GitHub App installation token when the App is configured; it can be
+      # granted a branch-protection bypass for main. Falls back to GITHUB_TOKEN
+      # (which cannot push to a protected main) when the App secrets are absent.
+      - name: Generate app token
+        id: app-token
+        if: ${{ secrets.POSTHOG_WATCHER_APP_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.POSTHOG_WATCHER_APP_ID }}
+          private-key: ${{ secrets.POSTHOG_WATCHER_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: main
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
 
       - name: Setup environment
         uses: ./.github/actions/setup
