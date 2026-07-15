@@ -70,7 +70,7 @@ jobs:
           sudo apt-get install -y fd-find ripgrep
           sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
 
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -82,7 +82,7 @@ jobs:
 To route through the PostHog LLM gateway instead of OpenAI, pick a `posthog/*` model and supply `posthog-api-key` (a `pha_` OAuth access token) in place of `openai-api-key`:
 
 ```yaml
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -143,7 +143,7 @@ You can also generate an installation token before running the action:
     app-id: ${{ secrets.POSTHOG_WATCHER_APP_ID }}
     private-key: ${{ secrets.POSTHOG_WATCHER_APP_PRIVATE_KEY }}
 
-- uses: PostHog/posthog-watcher-action@v0
+- uses: PostHog/posthog-watcher-action@main
   with:
     openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
     github-token: ${{ steps.app-token.outputs.token }}
@@ -300,7 +300,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: enqueue
@@ -340,7 +340,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fd-find ripgrep
           sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
-      - uses: PostHog/posthog-watcher-action@v0
+      - uses: PostHog/posthog-watcher-action@main
         with:
           openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -447,11 +447,12 @@ action runs from. Pull requests must **not** modify it (CI enforces this) — th
 merge, so `main` always carries a bundle built from the exact merged source. Run
 `pnpm build` locally only when you want to test the compiled action.
 
-When moving the `v0` release tag, point it at a commit whose `dist/` is current —
-normally `Sync dist`'s own `chore: rebuild dist` commit, not the merge commit it
-follows (the merge commit still carries the previous bundle). If a push run was
+Consumers pin `@main`. Right after a source merge there is a brief window until
+`Sync dist`'s `chore: rebuild dist` commit lands in which `main` still carries the
+previous bundle; runs starting in that window use the prior build. If a push run was
 skipped (for example a merge message containing `[skip ci]`), trigger `Sync dist`
-manually via workflow dispatch.
+manually via workflow dispatch. If you later cut release tags, point them at a commit
+whose `dist/` is current — normally the rebuild commit, not the merge commit before it.
 
 If `main` is protected, `Sync dist` needs a token allowed to push to it. When the
 `POSTHOG_WATCHER_APP_ID` / `POSTHOG_WATCHER_APP_PRIVATE_KEY` secrets are configured it
