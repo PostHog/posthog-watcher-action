@@ -90,7 +90,7 @@ function renderMemoryHeader(record: RepoMemoryRecord): string {
 }
 
 function renderMemoryEntry(record: RepoMemoryRecord, inputs: ActionInputs): string {
-  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken];
+  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken];
   const lines = [
     `## ${new Date().toISOString()}`,
     `- Item: ${redactSecrets(record.item, secrets)} — ${redactSecrets(record.title, secrets)}`,
@@ -188,7 +188,7 @@ async function upsertFile(octokit: Octokit, owner: string, repo: string, branch:
 }
 
 function renderRecord(record: StateRecord, inputs: ActionInputs): string {
-  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken];
+  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken];
   const data = redactJson(record.data, secrets);
   return `# ${record.kind} ${record.numberOrSha}: ${redactSecrets(record.title, secrets)}\n\n- Repo: ${record.owner}/${record.repo}\n- URL: ${record.url}\n- Conclusion: ${redactSecrets(record.conclusion, secrets)}\n- Labels: ${record.labels.join(', ') || '(none)'}\n- PR: ${record.prUrl || '(none)'}\n- Closed: ${record.closed ? 'yes' : 'no'}\n- Run: ${runUrl()}\n- Updated: ${new Date().toISOString()}\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\`\n`;
 }

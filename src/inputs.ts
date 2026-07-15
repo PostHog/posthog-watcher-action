@@ -1,14 +1,22 @@
 import * as core from '@actions/core';
 
 export type QueuedMode = 'auto' | 'triage' | 'investigate' | 'fix';
-export type Mode = QueuedMode | 'commit-review' | 'sweep' | 'enqueue' | 'drain-queue';
+export type Mode = QueuedMode | 'commit-review' | 'pr-review' | 'sweep' | 'enqueue' | 'drain-queue';
 
 export type PosthogRegion = 'us' | 'eu' | 'dev';
+
+export type FixExecutor = 'pi' | 'posthog-code';
 
 export interface ActionInputs {
   openaiApiKey: string;
   posthogApiKey: string;
   posthogRegion: PosthogRegion;
+  fixExecutor: FixExecutor;
+  posthogCodeApiKey: string;
+  posthogCodeProjectId: string;
+  posthogCodeRuntimeAdapter: string;
+  posthogCodePollIntervalMs: number;
+  posthogCodeTimeoutMs: number;
   githubToken: string;
   model: string;
   issueNumber?: number;
@@ -32,6 +40,9 @@ export interface ActionInputs {
   reproductionCommand: string;
   requireReproduction: boolean;
   fixPrReviewTeam: string;
+  allowPrReview: boolean;
+  maxReviewFiles: number;
+  maxReviewFindings: number;
   commitSha?: string;
   maxSweepItems: number;
   maxSweepFixItems: number;
@@ -66,6 +77,12 @@ export function getInputs(): ActionInputs {
     openaiApiKey: optionalSecret('openai-api-key'),
     posthogApiKey: optionalSecret('posthog-api-key'),
     posthogRegion: normalizePosthogRegion(core.getInput('posthog-region') || 'us'),
+    fixExecutor: normalizeFixExecutor(core.getInput('fix-executor') || 'pi'),
+    posthogCodeApiKey: optionalSecret('posthog-code-api-key'),
+    posthogCodeProjectId: core.getInput('posthog-code-project-id'),
+    posthogCodeRuntimeAdapter: core.getInput('posthog-code-runtime-adapter') || 'claude',
+    posthogCodePollIntervalMs: parsePositiveInt(core.getInput('posthog-code-poll-interval-ms') || '15000', 'posthog-code-poll-interval-ms'),
+    posthogCodeTimeoutMs: parsePositiveInt(core.getInput('posthog-code-timeout-ms') || '1800000', 'posthog-code-timeout-ms'),
     githubToken: required('github-token'),
     model: core.getInput('model') || 'openai/gpt-5.5:high',
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, 'issue-number') : undefined,
@@ -89,6 +106,9 @@ export function getInputs(): ActionInputs {
     reproductionCommand: core.getInput('reproduction-command'),
     requireReproduction: parseBoolean(core.getInput('require-reproduction')),
     fixPrReviewTeam: core.getInput('fix-pr-review-team').trim(),
+    allowPrReview: parseBoolean(core.getInput('allow-pr-review')),
+    maxReviewFiles: parsePositiveInt(core.getInput('max-review-files') || '30', 'max-review-files'),
+    maxReviewFindings: parsePositiveInt(core.getInput('max-review-findings') || '20', 'max-review-findings'),
     commitSha: core.getInput('commit-sha') || undefined,
     maxSweepItems: parsePositiveInt(core.getInput('max-sweep-items') || '10', 'max-sweep-items'),
     maxSweepFixItems: parseNonNegativeInt(core.getInput('max-sweep-fix-items') || '0', 'max-sweep-fix-items'),
@@ -172,14 +192,19 @@ function normalizePosthogRegion(value: string): PosthogRegion {
   throw new Error('posthog-region must be one of: us, eu, dev');
 }
 
+function normalizeFixExecutor(value: string): FixExecutor {
+  if (value === 'pi' || value === 'posthog-code') return value;
+  throw new Error('fix-executor must be one of: pi, posthog-code');
+}
+
 function normalizePiSessionSharingMode(value: string): 'state-branch' | 'gist' {
   if (value === 'state-branch' || value === 'gist') return value;
   throw new Error('pi-session-sharing-mode must be one of: state-branch, gist');
 }
 
 function normalizeMode(value: string): Mode {
-  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix' || value === 'commit-review' || value === 'sweep' || value === 'enqueue' || value === 'drain-queue') {
+  if (value === 'auto' || value === 'triage' || value === 'investigate' || value === 'fix' || value === 'commit-review' || value === 'pr-review' || value === 'sweep' || value === 'enqueue' || value === 'drain-queue') {
     return value;
   }
-  throw new Error('mode must be one of: auto, triage, investigate, fix, commit-review, sweep, enqueue, drain-queue');
+  throw new Error('mode must be one of: auto, triage, investigate, fix, commit-review, pr-review, sweep, enqueue, drain-queue');
 }
