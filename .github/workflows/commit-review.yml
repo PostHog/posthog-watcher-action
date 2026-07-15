@@ -30,6 +30,12 @@ jobs:
           sudo apt-get install -y fd-find ripgrep
           sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
 
+      - name: Setup environment
+        uses: ./.github/actions/setup
+
+      - name: Build action
+        run: pnpm build
+
       - name: Review commit
         uses: ./
         with:

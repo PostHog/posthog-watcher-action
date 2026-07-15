@@ -441,4 +441,8 @@ pnpm install
 pnpm build
 ```
 
-`dist/index.js` is generated and should be committed for GitHub Actions usage.
+`dist/` (`dist/index.js` and `dist/posthog-provider.js`) is the generated bundle the
+action runs from. You do **not** need to build or commit it in pull requests — the
+`Sync dist` workflow rebuilds it from source and commits it back to `main` after every
+merge, so `main` always carries a bundle built from the exact merged source. Run
+`pnpm build` locally only when you want to test the compiled action.
