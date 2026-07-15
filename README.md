@@ -347,7 +347,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `posthog-api-key` | required for `posthog/*` models except `enqueue` | PostHog API key (`pha_...`) used by `pi` against the PostHog LLM gateway. `enqueue` mode does not call `pi` and may omit it. |
+| `posthog-api-key` | required for `posthog/*` models except `enqueue` | PostHog OAuth access token (`pha_...`) used by `pi` against the PostHog LLM gateway. Personal API keys (`phx_...`) are **not** accepted by the gateway. Tokens are minted by a PostHog OAuth login (for example PostHog Code or `@posthog/harness` `/login`) and expire after about a week, so rotate the secret. `enqueue` mode does not call `pi` and may omit it. |
 | `posthog-region` | `us` | PostHog Cloud region for the LLM gateway: `us`, `eu`, or `dev`. Only used with `posthog/*` models. |
 | `openai-api-key` | required for `openai/*` models except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, PRs, and optional state. |
