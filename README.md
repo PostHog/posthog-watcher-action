@@ -544,8 +544,10 @@ skipped (for example a merge message containing `[skip ci]`), trigger `Sync dist
 manually via workflow dispatch. If you later cut release tags, point them at a commit
 whose `dist/` is current — normally the rebuild commit, not the merge commit before it.
 
-If `main` is protected, `Sync dist` needs a token allowed to push to it. When the
-`POSTHOG_WATCHER_APP_ID` / `POSTHOG_WATCHER_APP_PRIVATE_KEY` secrets are configured it
-mints a GitHub App installation token (grant that App a branch-protection bypass for
-`main`); otherwise it falls back to `GITHUB_TOKEN`, which cannot push to a protected
-branch.
+`Sync dist` creates its commit through GitHub's commit API (`planetscale/ghcommit-action`),
+so it is signed by GitHub and shows as Verified — satisfying a required-signatures branch
+rule. If `main` is otherwise protected (required PRs or status checks), the committing
+token still needs a bypass: when the `POSTHOG_WATCHER_APP_ID` /
+`POSTHOG_WATCHER_APP_PRIVATE_KEY` secrets are configured it mints a GitHub App
+installation token (grant that App a branch-protection bypass for `main`); otherwise it
+falls back to `GITHUB_TOKEN`, which cannot commit to a protected branch.

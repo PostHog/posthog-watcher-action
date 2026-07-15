@@ -42,32 +42,39 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: main
-          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
 
       - name: Setup environment
         uses: ./.github/actions/setup
         with:
           build: 'true'
 
-      - name: Commit dist if changed
+      - name: Check for dist changes
+        id: dist
         run: |
           if [[ -z "$(git status --porcelain -- dist)" ]]; then
+            echo "commit=false" >> "$GITHUB_OUTPUT"
             echo "dist already up to date"
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist
-          git commit -m "chore: rebuild dist"
-          if git push origin HEAD:main; then
-            exit 0
-          fi
-          # Non-fast-forward is expected when another commit landed on main
-          # mid-run; the push event for that commit re-triggers this workflow,
-          # so treat it as superseded rather than failed.
+          # If main moved on while we were building, this run's dist no longer
+          # matches main's tip; the newer push re-triggers this workflow, so
+          # treat this run as superseded instead of committing a stale bundle.
           git fetch origin main
-          if [[ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD^)" ]]; then
+          if [[ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD)" ]]; then
+            echo "commit=false" >> "$GITHUB_OUTPUT"
             echo "main moved on; a newer Sync dist run will rebuild from it"
             exit 0
           fi
-          exit 1
+          echo "commit=true" >> "$GITHUB_OUTPUT"
+
+      # Commit through GitHub's commit API so the commit is signed by GitHub
+      # and shows as Verified, satisfying the required-signatures branch rule.
+      - name: Commit dist
+        if: steps.dist.outputs.commit == 'true'
+        uses: planetscale/ghcommit-action@a6b150b81dca5dd027baa898604418eec9e11465 # v0.2.22
+        with:
+          commit_message: 'chore: rebuild dist'
+          repo: ${{ github.repository }}
+          branch: main
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
