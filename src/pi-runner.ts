@@ -14,9 +14,13 @@ export interface PiRunOptions {
   requireText?: boolean;
 }
 
+export function isPosthogModel(model: string): boolean {
+  return model.startsWith('posthog/');
+}
+
 export async function runPi(options: PiRunOptions): Promise<string> {
   if (options.inputs.model.startsWith('openai-codex/')) {
-    throw new Error('The openai-codex/* provider is not supported by this GitHub Action because it only configures OPENAI_API_KEY. Use an OpenAI API model such as openai/gpt-5.6-terra:high.');
+    throw new Error('The openai-codex/* provider is not supported by this GitHub Action because it only configures API keys, not Codex OAuth. Use a PostHog gateway model such as posthog/claude-opus-4-8 or an OpenAI API model such as openai/gpt-5.6-terra:high.');
   }
 
   const attempts = options.inputs.piRetries + 1;
@@ -44,6 +48,10 @@ function firstLine(value: string): string {
 
 async function runPiOnce(options: PiRunOptions, callNumber: number): Promise<string> {
   const skillPath = path.join(path.resolve(__dirname, '..'), 'skills', 'karpathy-guidelines', 'SKILL.md');
+  // Standalone extension registering the PostHog LLM gateway provider, built
+  // next to the bundled entrypoint. pi's --no-extensions only disables
+  // discovery; explicit -e paths still load.
+  const posthogProviderPath = path.join(__dirname, 'posthog-provider.js');
   const sessionCapture = await beginPiSessionCapture(options.inputs, callNumber);
   const args = [
     '--yes',
@@ -55,6 +63,7 @@ async function runPiOnce(options: PiRunOptions, callNumber: number): Promise<str
     'json',
     ...sessionCapture.args,
     '--no-extensions',
+    ...(isPosthogModel(options.inputs.model) ? ['-e', posthogProviderPath] : []),
     '--no-prompt-templates',
     '--skill',
     skillPath,
@@ -67,23 +76,23 @@ async function runPiOnce(options: PiRunOptions, callNumber: number): Promise<str
     options.prompt,
   ];
 
-  const env = sanitizedEnv(options.inputs.openaiApiKey);
+  const env = sanitizedEnv(options.inputs);
   const result = await runCommandStatus('npx', args, { cwd: options.cwd ?? process.cwd(), env, timeoutMs: options.inputs.piTimeoutMs });
   await finishPiSessionCapture(sessionCapture);
   if (result.stderr.trim()) core.debug(result.stderr.trim());
 
   if (result.code !== 0) {
-    throw new Error(`pi exited with code ${result.code}.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs.openaiApiKey, options.inputs.githubToken)}`);
+    throw new Error(`pi exited with code ${result.code}.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs)}`);
   }
 
   const text = collectAssistantText(result.stdout);
   if (!text.trim() && options.requireText !== false) {
-    throw new Error(`pi returned no assistant text.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs.openaiApiKey, options.inputs.githubToken)}`);
+    throw new Error(`pi returned no assistant text.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs)}`);
   }
   return text.trim();
 }
 
-function sanitizedEnv(openaiApiKey: string): NodeJS.ProcessEnv {
+function sanitizedEnv(inputs: ActionInputs): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
@@ -91,7 +100,13 @@ function sanitizedEnv(openaiApiKey: string): NodeJS.ProcessEnv {
       env[key] = value;
     }
   }
-  env.OPENAI_API_KEY = openaiApiKey;
+  // Expose only the credential the selected model provider needs.
+  if (isPosthogModel(inputs.model)) {
+    env.POSTHOG_API_KEY = inputs.posthogApiKey;
+    env.POSTHOG_REGION = inputs.posthogRegion;
+  } else {
+    env.OPENAI_API_KEY = inputs.openaiApiKey;
+  }
   return env;
 }
 
@@ -160,12 +175,13 @@ function extractMessageText(message: PiMessage): string {
     .join('');
 }
 
-function formatPiDiagnostics(stdout: string, stderr: string, openaiApiKey: string, githubToken: string): string {
-  const errors = collectPiErrors(stdout).map((error) => redactSecrets(error, [openaiApiKey, githubToken]));
+function formatPiDiagnostics(stdout: string, stderr: string, inputs: ActionInputs): string {
+  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken];
+  const errors = collectPiErrors(stdout).map((error) => redactSecrets(error, secrets));
   const sections = [];
   if (errors.length) sections.push(`pi errors:\n${errors.join('\n')}`);
-  if (stderr.trim()) sections.push(`stderr:\n${redactSecrets(stderr.trim().slice(-4000), [openaiApiKey, githubToken])}`);
-  sections.push(`raw output tail:\n${redactSecrets(stdout.slice(-4000), [openaiApiKey, githubToken])}`);
+  if (stderr.trim()) sections.push(`stderr:\n${redactSecrets(stderr.trim().slice(-4000), secrets)}`);
+  sections.push(`raw output tail:\n${redactSecrets(stdout.slice(-4000), secrets)}`);
   return `\n\n${sections.join('\n\n')}`;
 }
 

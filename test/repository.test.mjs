@@ -229,7 +229,7 @@ test('dedicated queue modes are wired without requiring OpenAI for enqueue', () 
   assert.match(index, /maybeTriggerDrainWorkflow/);
   assert.match(index, /createWorkflowDispatch/);
   assert.match(index, /verifyCommandRepositoryPermission/);
-  assert.match(index, /requireOpenAiApiKey\(rawInputs\)/);
+  assert.match(index, /requireModelApiKey\(rawInputs\)/);
   assert.match(index, /inputs\.mode === 'drain-queue'/);
   assert.match(index, /replyToCommand\(octokit, item\.number, itemInputs, item\.command, item\.extraInstructions \|\| \(await queuedCommandBody/);
   assert.match(queue, /queue\.json/);
@@ -242,7 +242,7 @@ test('dedicated queue modes are wired without requiring OpenAI for enqueue', () 
   assert.match(readme, /Dedicated queue worker/);
   assert.match(readme, /trigger-drain-workflow/);
   assert.match(readme, /actions: write/);
-  assert.match(readme, /without `pi` or `openai-api-key`/);
+  assert.match(readme, /without `pi` or a model API key/);
 });
 
 test('pi session sharing is opt-in and links forkable JSONL sessions', () => {
@@ -460,4 +460,36 @@ test('workflow actions are pinned to full-length SHAs', () => {
   const workflows = [read('.github/workflows/ci.yml'), read('.github/workflows/commit-review.yml'), read('.github/actions/setup/action.yml')].join('\n');
   assert.doesNotMatch(workflows, /uses:\s+[^\s]+@v\d/);
   assert.match(workflows, /actions\/checkout@[0-9a-f]{40}/);
+});
+
+test('posthog gateway provider is wired for posthog/* models', () => {
+  const action = read('action.yml');
+  const inputs = read('src/inputs.ts');
+  const piRunner = read('src/pi-runner.ts');
+  const extension = read('src/posthog-provider-extension.ts');
+  const build = read('scripts/build.mjs');
+  const readme = read('README.md');
+  assert.match(action, /posthog-api-key/);
+  assert.match(action, /posthog-region/);
+  // Back-compat: the default model and provider stay on OpenAI; posthog/* is opt-in.
+  assert.match(action, /default: openai\/gpt-5\.6-terra:high/);
+  assert.match(inputs, /optionalSecret\('posthog-api-key'\)/);
+  assert.match(inputs, /optionalSecret\('openai-api-key'\)/);
+  assert.match(inputs, /normalizePosthogRegion/);
+  assert.match(inputs, /'openai\/gpt-5\.6-terra:high'/);
+  assert.match(piRunner, /isPosthogModel/);
+  assert.match(piRunner, /posthog-provider\.js/);
+  assert.match(piRunner, /POSTHOG_API_KEY/);
+  assert.match(piRunner, /POSTHOG_REGION/);
+  // The credential reaches pi via env, never argv, and only for the matching provider.
+  assert.doesNotMatch(piRunner, /--api-key/);
+  assert.match(piRunner, /'--no-extensions',\n    \.\.\.\(isPosthogModel/);
+  assert.match(extension, /registerProvider\(POSTHOG_PROVIDER_NAME/);
+  assert.match(extension, /\$POSTHOG_API_KEY/);
+  assert.match(extension, /gateway\.us\.posthog\.com/);
+  assert.match(extension, /gateway\.eu\.posthog\.com/);
+  assert.match(build, /posthog-provider-extension\.ts/);
+  assert.match(build, /dist\/posthog-provider\.js/);
+  assert.match(readme, /posthog-api-key/);
+  assert.match(readme, /PostHog LLM gateway/);
 });

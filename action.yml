@@ -7,8 +7,16 @@ branding:
   color: orange
 
 inputs:
+  posthog-api-key:
+    description: PostHog OAuth access token (pha_...) used by pi against the PostHog LLM gateway. Personal API keys (phx_...) are rejected by the gateway. Required for posthog/* models except in enqueue mode.
+    required: false
+    default: ''
+  posthog-region:
+    description: PostHog Cloud region for the LLM gateway (us, eu, or dev). Only used with posthog/* models.
+    required: false
+    default: 'us'
   openai-api-key:
-    description: OpenAI API key used by pi. Optional only when mode is enqueue.
+    description: OpenAI API key used by pi. Required for openai/* models except in enqueue mode.
     required: false
     default: ''
   github-token:
@@ -16,7 +24,7 @@ inputs:
     required: false
     default: ${{ github.token }}
   model:
-    description: pi model identifier
+    description: pi model identifier. openai/* models call OpenAI directly, posthog/* models route through the PostHog LLM gateway.
     required: false
     default: openai/gpt-5.6-terra:high
   issue-number:
