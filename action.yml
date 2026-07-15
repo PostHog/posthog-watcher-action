@@ -192,7 +192,7 @@ inputs:
     required: false
     default: posthog-watcher-state
   comment-marker:
-    description: Hidden marker used to create/update a single durable issue comment
+    description: Hidden marker used to create/update durable comments and identify watcher-generated comments during security assessment
     required: false
     default: '<!-- posthog-watcher-action -->'
   pi-version:

@@ -24535,13 +24535,12 @@ var KNOWN_SECRET_PATTERNS = [
   { reason: "token", pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/i },
   { reason: "private key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/i }
 ];
-var DEFAULT_COMMENT_MARKER = "<!-- posthog-watcher-action -->";
 var CREDENTIAL_VALUE_PATTERNS = [
   { reason: "token", pattern: /\b(?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|token)\b\s*(?:[:=]|=>)\s*["'`]?([^\s"'`,;\])}]+)/i },
   { reason: "token", pattern: /\bauthorization\s*:\s*bearer\s+([^\s"'`,;\])}]+)/i },
   { reason: "credential", pattern: /\b(?:api[_ -]?key|client[_ -]?secret|secret|credential|password)\b\s*(?:[:=]|=>)\s*["'`]?([^\s"'`,;\])}]+)/i }
 ];
-function assessIssueSecurity(issue2, commentMarker = DEFAULT_COMMENT_MARKER) {
+function assessIssueSecurity(issue2, commentMarker) {
   const labelHaystack = issue2.labels.join("\n");
   const textHaystack = [issue2.title, issue2.body, ...issue2.comments.filter((comment) => !isWatcherGeneratedComment(comment, commentMarker)).map((comment) => comment.body)].join("\n");
   const reasons = /* @__PURE__ */ new Set();
@@ -24578,7 +24577,7 @@ function looksLikeCredentialValue(value) {
   return characterClasses >= 2;
 }
 function isWatcherGeneratedComment(comment, commentMarker) {
-  return comment.author.endsWith("[bot]") && (comment.body.includes(commentMarker) || comment.body.includes(DEFAULT_COMMENT_MARKER));
+  return comment.author.endsWith("[bot]") && comment.body.includes(commentMarker);
 }
 function term(value) {
   return { reason: value, pattern: new RegExp(`\\b${escapeRegExp(value)}\\b`, "i") };

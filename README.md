@@ -393,7 +393,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `pi-session-gist-token` | empty | Token with `gist` permission, required when `pi-session-sharing-mode: gist`. |
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
-| `comment-marker` | `<!-- posthog-watcher-action -->` | Hidden marker used to create/update one durable issue or command comment. |
+| `comment-marker` | `<!-- posthog-watcher-action -->` | Configurable marker used to create/update durable comments and exclude watcher-generated bot comments from later security assessments. |
 | `pi-version` | `0.80.7` | Version of `@earendil-works/pi-coding-agent` invoked with `npx`. |
 
 ## Guardrails

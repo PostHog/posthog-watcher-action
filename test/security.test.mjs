@@ -4,7 +4,9 @@ import test from 'node:test';
 import { transform } from 'esbuild';
 
 const { code } = await transform(readFileSync('src/security.ts', 'utf8'), { loader: 'ts', format: 'esm' });
-const { assessIssueSecurity } = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+const { assessIssueSecurity: assessSecurity } = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+const COMMENT_MARKER = '<!-- custom-watcher-marker -->';
+const assessIssueSecurity = (snapshot, commentMarker = COMMENT_MARKER) => assessSecurity(snapshot, commentMarker);
 
 function issue(overrides = {}) {
   return {
@@ -72,7 +74,7 @@ test('watcher-generated bot comments do not poison later security assessments', 
   assert.deepEqual(assessment.reasons, []);
 });
 
-test('legacy watcher comments remain ignored when a custom marker is configured', () => {
+test('bot comments using a different marker remain part of the security assessment', () => {
   const assessment = assessIssueSecurity(issue({
     comments: [{
       author: 'github-actions[bot]',
@@ -80,10 +82,10 @@ test('legacy watcher comments remain ignored when a custom marker is configured'
       url: 'https://github.com/example-org/example-project/issues/1#issuecomment-2',
       createdAt: '2026-07-01T00:00:00Z',
     }],
-  }), '<!-- custom-watcher-marker -->');
+  }));
 
-  assert.equal(assessment.sensitive, false);
-  assert.deepEqual(assessment.reasons, []);
+  assert.equal(assessment.sensitive, true);
+  assert.deepEqual(assessment.reasons, ['security']);
 });
 
 test('non-bot comments cannot hide security text by mentioning watcher marker', () => {
