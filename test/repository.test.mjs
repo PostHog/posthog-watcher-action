@@ -458,10 +458,12 @@ test('posthog gateway provider is wired for posthog/* models', () => {
   const readme = read('README.md');
   assert.match(action, /posthog-api-key/);
   assert.match(action, /posthog-region/);
-  assert.match(action, /default: posthog\/claude-opus-4-8/);
+  // Back-compat: the default model and provider stay on OpenAI; posthog/* is opt-in.
+  assert.match(action, /default: openai\/gpt-5\.5:high/);
   assert.match(inputs, /optionalSecret\('posthog-api-key'\)/);
+  assert.match(inputs, /optionalSecret\('openai-api-key'\)/);
   assert.match(inputs, /normalizePosthogRegion/);
-  assert.match(inputs, /'posthog\/claude-opus-4-8'/);
+  assert.match(inputs, /'openai\/gpt-5\.5:high'/);
   assert.match(piRunner, /isPosthogModel/);
   assert.match(piRunner, /posthog-provider\.js/);
   assert.match(piRunner, /POSTHOG_API_KEY/);

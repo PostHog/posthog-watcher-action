@@ -25736,7 +25736,7 @@ function getInputs() {
     posthogApiKey: optionalSecret("posthog-api-key"),
     posthogRegion: normalizePosthogRegion(getInput("posthog-region") || "us"),
     githubToken: required("github-token"),
-    model: getInput("model") || "posthog/claude-opus-4-8",
+    model: getInput("model") || "openai/gpt-5.5:high",
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, "issue-number") : void 0,
     mode,
     allowFix: parseBoolean(getInput("allow-fix")),
@@ -25781,7 +25781,7 @@ function getInputs() {
     stateRepo: getInput("state-repo"),
     stateBranch: getInput("state-branch") || "posthog-watcher-state",
     commentMarker: getInput("comment-marker") || "<!-- posthog-watcher-action -->",
-    piVersion: getInput("pi-version") || "0.80.6"
+    piVersion: getInput("pi-version") || "0.80.3"
   };
 }
 function required(name) {

@@ -72,12 +72,26 @@ jobs:
 
       - uses: PostHog/posthog-watcher-action@v0
         with:
+          openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ inputs['issue-number'] }}
+          model: openai/gpt-5.5:high
+          allow-fix: 'true'
+```
+
+To route through the PostHog LLM gateway instead of OpenAI, pick a `posthog/*` model and supply `posthog-api-key` (a `pha_` OAuth access token) in place of `openai-api-key`:
+
+```yaml
+      - uses: PostHog/posthog-watcher-action@v0
+        with:
           posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ inputs['issue-number'] }}
           model: posthog/claude-opus-4-8
           allow-fix: 'true'
 ```
+
+The model prefix decides the provider: `openai/*` models use `openai-api-key`, `posthog/*` models use `posthog-api-key`.
 
 For PR creation with `${{ secrets.GITHUB_TOKEN }}`, the target repository must also enable **Settings → Actions → General → Workflow permissions → Read and write permissions** and **Allow GitHub Actions to create and approve pull requests**.
 
@@ -131,7 +145,7 @@ You can also generate an installation token before running the action:
 
 - uses: PostHog/posthog-watcher-action@v0
   with:
-    posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }}
+    openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
     github-token: ${{ steps.app-token.outputs.token }}
 ```
 
@@ -328,7 +342,7 @@ jobs:
           sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
       - uses: PostHog/posthog-watcher-action@v0
         with:
-          posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }}
+          openai-api-key: ${{ secrets.POSTHOG_WATCHER_OPENAI_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: drain-queue
           max-queue-items: '5'
@@ -347,11 +361,11 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 | Input | Default | Description |
 | --- | --- | --- |
+| `openai-api-key` | required for `openai/*` models except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
 | `posthog-api-key` | required for `posthog/*` models except `enqueue` | PostHog OAuth access token (`pha_...`) used by `pi` against the PostHog LLM gateway. Personal API keys (`phx_...`) are **not** accepted by the gateway. Tokens are minted by a PostHog OAuth login (for example PostHog Code or `@posthog/harness` `/login`) and expire after about a week, so rotate the secret. `enqueue` mode does not call `pi` and may omit it. |
 | `posthog-region` | `us` | PostHog Cloud region for the LLM gateway: `us`, `eu`, or `dev`. Only used with `posthog/*` models. |
-| `openai-api-key` | required for `openai/*` models except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, PRs, and optional state. |
-| `model` | `posthog/claude-opus-4-8` | pi model identifier. `posthog/*` models route through the PostHog LLM gateway; `openai/*` models call OpenAI directly (for example `openai/gpt-5.5:high`). |
+| `model` | `openai/gpt-5.5:high` | pi model identifier with high thinking enabled. The prefix picks the provider: `openai/*` models call OpenAI directly, `posthog/*` models route through the PostHog LLM gateway (for example `posthog/claude-opus-4-8`). |
 | `issue-number` | event issue | Issue or PR number to process. |
 | `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `sweep`, `enqueue`, or `drain-queue`. |
 | `allow-fix` | `false` | Allows draft PR creation or same-repo PR branch repair when guardrails pass. |
@@ -396,7 +410,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
 | `comment-marker` | `<!-- posthog-watcher-action -->` | Hidden marker used to create/update one durable issue or command comment. |
-| `pi-version` | `0.80.6` | Version of `@earendil-works/pi-coding-agent` invoked with `npx`. |
+| `pi-version` | `0.80.3` | Version of `@earendil-works/pi-coding-agent` invoked with `npx`. |
 
 ## Guardrails
 

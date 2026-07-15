@@ -67,7 +67,7 @@ export function getInputs(): ActionInputs {
     posthogApiKey: optionalSecret('posthog-api-key'),
     posthogRegion: normalizePosthogRegion(core.getInput('posthog-region') || 'us'),
     githubToken: required('github-token'),
-    model: core.getInput('model') || 'posthog/claude-opus-4-8',
+    model: core.getInput('model') || 'openai/gpt-5.5:high',
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, 'issue-number') : undefined,
     mode,
     allowFix: parseBoolean(core.getInput('allow-fix')),
@@ -112,7 +112,7 @@ export function getInputs(): ActionInputs {
     stateRepo: core.getInput('state-repo'),
     stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',
     commentMarker: core.getInput('comment-marker') || '<!-- posthog-watcher-action -->',
-    piVersion: core.getInput('pi-version') || '0.80.6',
+    piVersion: core.getInput('pi-version') || '0.80.3',
   };
 }
 
