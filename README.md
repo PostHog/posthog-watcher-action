@@ -79,6 +79,20 @@ jobs:
           allow-fix: 'true'
 ```
 
+To route through the PostHog LLM gateway instead of OpenAI, pick a `posthog/*` model and supply `posthog-api-key` (a `pha_` OAuth access token) in place of `openai-api-key`:
+
+```yaml
+      - uses: PostHog/posthog-watcher-action@v0
+        with:
+          posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ inputs['issue-number'] }}
+          model: posthog/claude-opus-4-8
+          allow-fix: 'true'
+```
+
+The model prefix decides the provider: `openai/*` models use `openai-api-key`, `posthog/*` models use `posthog-api-key`.
+
 For PR creation with `${{ secrets.GITHUB_TOKEN }}`, the target repository must also enable **Settings → Actions → General → Workflow permissions → Read and write permissions** and **Allow GitHub Actions to create and approve pull requests**.
 
 ## GitHub token options
@@ -256,7 +270,7 @@ concurrency:
 
 ## Dedicated queue worker
 
-For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or `openai-api-key`. Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Set `trigger-drain-workflow: true` to dispatch the worker immediately after a new queue item is written. Pull request review comments and commented/changes-requested reviews are treated as `<command-mention> address review` for same-repo watcher PRs.
+For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or a model API key (`posthog-api-key`/`openai-api-key`). Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Set `trigger-drain-workflow: true` to dispatch the worker immediately after a new queue item is written. Pull request review comments and commented/changes-requested reviews are treated as `<command-mention> address review` for same-repo watcher PRs.
 
 Event enqueue workflow:
 
@@ -347,9 +361,11 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `openai-api-key` | required except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
+| `openai-api-key` | required for `openai/*` models except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
+| `posthog-api-key` | required for `posthog/*` models except `enqueue` | PostHog OAuth access token (`pha_...`) used by `pi` against the PostHog LLM gateway. Personal API keys (`phx_...`) are **not** accepted by the gateway. Tokens are minted by a PostHog OAuth login (for example PostHog Code or `@posthog/harness` `/login`) and expire after about a week, so rotate the secret. `enqueue` mode does not call `pi` and may omit it. |
+| `posthog-region` | `us` | PostHog Cloud region for the LLM gateway: `us`, `eu`, or `dev`. Only used with `posthog/*` models. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, PRs, and optional state. |
-| `model` | `openai/gpt-5.5:high` | pi model identifier with high thinking enabled. |
+| `model` | `openai/gpt-5.5:high` | pi model identifier with high thinking enabled. The prefix picks the provider: `openai/*` models call OpenAI directly, `posthog/*` models route through the PostHog LLM gateway (for example `posthog/claude-opus-4-8`). |
 | `issue-number` | event issue | Issue or PR number to process. |
 | `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `sweep`, `enqueue`, or `drain-queue`. |
 | `allow-fix` | `false` | Allows draft PR creation or same-repo PR branch repair when guardrails pass. |
@@ -400,7 +416,8 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 - Triage uses read-only tools: `read`, `grep`, `find`, `ls`. The search tools require `rg`/ripgrep and `fd` on the runner; install them in host workflows before invoking this action, for example `sudo apt-get update && sudo apt-get install -y fd-find ripgrep && sudo ln -sf "$(which fdfind)" /usr/local/bin/fd`.
 - By default, pi is **not** run with `--approve`. Set `approve-project-resources: true` only for trusted repositories when host repo `AGENTS.md`, `.pi`, and `.agents` resources should be available in CI.
-- Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only `OPENAI_API_KEY` to the pi process, and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
+- Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only the selected provider's credential to the pi process (`POSTHOG_API_KEY` for `posthog/*` models, `OPENAI_API_KEY` for `openai/*` models), and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
+- `posthog/*` models load a bundled pi extension (`dist/posthog-provider.js`) that registers the PostHog LLM gateway as a pi model provider; extension auto-discovery stays disabled via `--no-extensions`.
 - The wrapper, not `pi`, performs GitHub API mutations.
 - `pi-session-sharing` is disabled by default. When enabled, pi runs with a temporary session directory, the wrapper saves the generated `.jsonl` files under `pi-sessions/` on `state-branch` by default, and comments include `pi --fork path/to/session.jsonl` handoff instructions. Set `pi-session-sharing-mode: gist` plus `pi-session-gist-token` to upload sessions to a private gist instead of the state branch.
 - Draft PR creation is skipped if the diff is too large or touches workflow files, lockfiles, or minified files.
@@ -413,8 +430,8 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 - Close/apply requires an explicit trusted command and `allow-close: true`.
 - Security-sensitive issues skip fix and close actions, and skip third-party AI by default.
 - Sweep mode disables fixes by default with `max-sweep-fix-items: 0`.
-- `enqueue` mode writes only queue state and does not require `openai-api-key`.
-- `drain-queue` processes queued items FIFO and requires `openai-api-key` like other pi-backed modes.
+- `enqueue` mode writes only queue state and does not require a model API key.
+- `drain-queue` processes queued items FIFO and requires the selected model's API key like other pi-backed modes.
 - Commit reviews are manual and read-only.
 
 ## Development
