@@ -5,10 +5,18 @@ export type Mode = QueuedMode | 'commit-review' | 'pr-review' | 'sweep' | 'enque
 
 export type PosthogRegion = 'us' | 'eu' | 'dev';
 
+export type FixExecutor = 'pi' | 'posthog-code';
+
 export interface ActionInputs {
   openaiApiKey: string;
   posthogApiKey: string;
   posthogRegion: PosthogRegion;
+  fixExecutor: FixExecutor;
+  posthogCodeApiKey: string;
+  posthogCodeProjectId: string;
+  posthogCodeRuntimeAdapter: string;
+  posthogCodePollIntervalMs: number;
+  posthogCodeTimeoutMs: number;
   githubToken: string;
   model: string;
   issueNumber?: number;
@@ -69,6 +77,12 @@ export function getInputs(): ActionInputs {
     openaiApiKey: optionalSecret('openai-api-key'),
     posthogApiKey: optionalSecret('posthog-api-key'),
     posthogRegion: normalizePosthogRegion(core.getInput('posthog-region') || 'us'),
+    fixExecutor: normalizeFixExecutor(core.getInput('fix-executor') || 'pi'),
+    posthogCodeApiKey: optionalSecret('posthog-code-api-key'),
+    posthogCodeProjectId: core.getInput('posthog-code-project-id'),
+    posthogCodeRuntimeAdapter: core.getInput('posthog-code-runtime-adapter') || 'claude',
+    posthogCodePollIntervalMs: parsePositiveInt(core.getInput('posthog-code-poll-interval-ms') || '15000', 'posthog-code-poll-interval-ms'),
+    posthogCodeTimeoutMs: parsePositiveInt(core.getInput('posthog-code-timeout-ms') || '1800000', 'posthog-code-timeout-ms'),
     githubToken: required('github-token'),
     model: core.getInput('model') || 'openai/gpt-5.5:high',
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, 'issue-number') : undefined,
@@ -176,6 +190,11 @@ function normalizeQueuedMode(value: string): QueuedMode {
 function normalizePosthogRegion(value: string): PosthogRegion {
   if (value === 'us' || value === 'eu' || value === 'dev') return value;
   throw new Error('posthog-region must be one of: us, eu, dev');
+}
+
+function normalizeFixExecutor(value: string): FixExecutor {
+  if (value === 'pi' || value === 'posthog-code') return value;
+  throw new Error('fix-executor must be one of: pi, posthog-code');
 }
 
 function normalizePiSessionSharingMode(value: string): 'state-branch' | 'gist' {
