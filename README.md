@@ -93,6 +93,34 @@ To route through the PostHog LLM gateway instead of OpenAI, pick a `posthog/*` m
 
 The model prefix decides the provider: `openai/*` models use `openai-api-key`, `posthog/*` models use `posthog-api-key`.
 
+## Delegating fixes to PostHog Code (cloud)
+
+Instead of running the local `pi` repair loop, the action can hand the whole fix to [PostHog Code](https://posthog.com/code)'s cloud sandbox via the PostHog tasks REST API. Set `fix-executor: posthog-code`: the action creates a remote task, starts a background cloud run, polls it to completion, and links the PR that PostHog Code opened. Triage, labeling, dedup, and comments still run through `pi` in the runner; only fix execution is delegated.
+
+> [!WARNING]
+> **The `posthog-code` executor bypasses this action's fix guardrails.** PostHog Code owns the agent loop, branch, commits, and PR in this mode, so none of the following apply to delegated fixes: the bounded repair loop, `reproduction-command`/`require-reproduction` reproduction-first checks, `validation-command`, `max-changed-files`/`max-diff-lines` diff guardrails, the independent read-only review gate, GitHub-signed Verified commits, `.github/pull_request_template.md` composition, and the `posthog-watcher/issue-N` branch naming. Review delegated PRs with the same scrutiny as any external contribution. The default executor stays `pi`, which keeps all guardrails.
+
+```yaml
+      - uses: PostHog/posthog-watcher-action@v0
+        with:
+          posthog-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_API_KEY }} # pha_ gateway token, used for triage
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ inputs['issue-number'] }}
+          model: posthog/claude-opus-4-8
+          allow-fix: 'true'
+          fix-executor: posthog-code
+          posthog-code-api-key: ${{ secrets.POSTHOG_WATCHER_POSTHOG_CODE_API_KEY }} # phx_ personal API key
+          posthog-code-project-id: '12345'
+```
+
+Prerequisites and notes:
+
+- The target repository must be connected to PostHog Code in your PostHog project so its cloud sandbox can clone, push a branch, and open the PR.
+- `posthog-code-api-key` is a **personal API key** (`phx_...`) with task scope. It is a different credential from `posthog-api-key`, which is a `pha_` OAuth token for the LLM gateway; the two are not interchangeable.
+- Delegation reuses the existing repo configuration: `posthog-region` picks the tasks API host (`us` → `https://us.posthog.com`, `eu` → `https://eu.posthog.com`), and the `model` input picks the cloud model — `posthog/*` ids map directly (`posthog/claude-opus-4-8:high` → `claude-opus-4-8`), while other providers (`openai/*`) fall back to `claude-opus-4-8` because they are not PostHog Code cloud models.
+- Cloud runs take minutes; the job stays alive polling until the run finishes or `posthog-code-timeout-ms` elapses (then the action requests cancellation).
+- `fix-pr-review-team` still applies: the action requests team review on the PR PostHog Code opened.
+
 For PR creation with `${{ secrets.GITHUB_TOKEN }}`, the target repository must also enable **Settings → Actions → General → Workflow permissions → Read and write permissions** and **Allow GitHub Actions to create and approve pull requests**.
 
 ## GitHub token options
@@ -363,8 +391,14 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 | --- | --- | --- |
 | `openai-api-key` | required for `openai/*` models except `enqueue` | OpenAI API key used by `pi`. `enqueue` mode does not call `pi` and may omit it. |
 | `posthog-api-key` | required for `posthog/*` models except `enqueue` | PostHog OAuth access token (`pha_...`) used by `pi` against the PostHog LLM gateway. Personal API keys (`phx_...`) are **not** accepted by the gateway. Tokens are minted by a PostHog OAuth login (for example PostHog Code or `@posthog/harness` `/login`) and expire after about a week, so rotate the secret. `enqueue` mode does not call `pi` and may omit it. |
-| `posthog-region` | `us` | PostHog Cloud region for the LLM gateway: `us`, `eu`, or `dev`. Only used with `posthog/*` models. |
+| `posthog-region` | `us` | PostHog Cloud region: `us`, `eu`, or `dev`. Used with `posthog/*` models for the LLM gateway, and with `fix-executor: posthog-code` to pick the PostHog Code tasks REST API host. |
 | `github-token` | `${{ github.token }}` | Token used by the wrapper for labels, comments, branches, PRs, and optional state. |
+| `fix-executor` | `pi` | Fix execution engine: `pi` runs the guarded local repair loop; `posthog-code` delegates the whole fix to PostHog Code's cloud sandbox, **bypassing this action's fix guardrails** (see [Delegating fixes to PostHog Code](#delegating-fixes-to-posthog-code-cloud)). |
+| `posthog-code-api-key` | required when `fix-executor: posthog-code` | PostHog **personal API key** (`phx_...`) for the PostHog Code tasks REST API. Not the same credential as `posthog-api-key`. |
+| `posthog-code-project-id` | required when `fix-executor: posthog-code` | PostHog project id for the PostHog Code tasks REST API. The API host comes from `posthog-region` and the cloud model from `model` (`posthog/*` ids map directly; other providers fall back to `claude-opus-4-8`). |
+| `posthog-code-runtime-adapter` | `claude` | PostHog Code runtime adapter for delegated cloud runs. |
+| `posthog-code-poll-interval-ms` | `15000` | Poll interval while waiting for a delegated run to finish. |
+| `posthog-code-timeout-ms` | `1800000` | Overall timeout for a delegated run before the action requests cancellation. |
 | `model` | `openai/gpt-5.5:high` | pi model identifier with high thinking enabled. The prefix picks the provider: `openai/*` models call OpenAI directly, `posthog/*` models route through the PostHog LLM gateway (for example `posthog/claude-opus-4-8`). |
 | `issue-number` | event issue | Issue or PR number to process. |
 | `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `sweep`, `enqueue`, or `drain-queue`. |
@@ -414,6 +448,7 @@ Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mod
 
 ## Guardrails
 
+- **All fix guardrails below assume the default `fix-executor: pi`.** With `fix-executor: posthog-code`, fix execution is delegated to PostHog Code's cloud sandbox and the repair loop, reproduction checks, diff limits, review gate, signed commits, and PR template guardrails are bypassed for delegated fixes.
 - Triage uses read-only tools: `read`, `grep`, `find`, `ls`. The search tools require `rg`/ripgrep and `fd` on the runner; install them in host workflows before invoking this action, for example `sudo apt-get update && sudo apt-get install -y fd-find ripgrep && sudo ln -sf "$(which fdfind)" /usr/local/bin/fd`.
 - By default, pi is **not** run with `--approve`. Set `approve-project-resources: true` only for trusted repositories when host repo `AGENTS.md`, `.pi`, and `.agents` resources should be available in CI.
 - Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only the selected provider's credential to the pi process (`POSTHOG_API_KEY` for `posthog/*` models, `OPENAI_API_KEY` for `openai/*` models), and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.

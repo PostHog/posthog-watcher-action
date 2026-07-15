@@ -480,3 +480,41 @@ test('posthog gateway provider is wired for posthog/* models', () => {
   assert.match(readme, /posthog-api-key/);
   assert.match(readme, /PostHog LLM gateway/);
 });
+
+test('posthog code fix delegation is wired behind fix-executor', () => {
+  const action = read('action.yml');
+  const inputs = read('src/inputs.ts');
+  const fixRunner = read('src/fix-runner.ts');
+  const delegate = read('src/posthog-code-fix-runner.ts');
+  const client = read('src/posthog-code-client.ts');
+  const index = read('src/index.ts');
+  const readme = read('README.md');
+  assert.match(action, /fix-executor/);
+  assert.match(action, /posthog-code-api-key/);
+  assert.match(action, /posthog-code-project-id/);
+  // Back-compat: pi stays the default executor; delegation is opt-in.
+  assert.match(action, /default: 'pi'/);
+  assert.match(inputs, /normalizeFixExecutor/);
+  assert.match(inputs, /optionalSecret\('posthog-code-api-key'\)/);
+  assert.match(fixRunner, /fixExecutor === 'posthog-code'/);
+  assert.match(fixRunner, /delegateFixToPostHogCode/);
+  assert.match(delegate, /startRun/);
+  assert.match(delegate, /latest_run\.id/);
+  assert.match(delegate, /TERMINAL_RUN_STATUSES/);
+  assert.match(client, /\/api\/projects\//);
+  assert.match(client, /origin_product/);
+  assert.match(client, /Authorization: `Bearer /);
+  // Host and model reuse existing repo configuration instead of new inputs.
+  assert.match(delegate, /taskApiHostForRegion\(inputs\.posthogRegion\)/);
+  assert.match(delegate, /cloudModelFromPiModel\(inputs\.model\)/);
+  assert.doesNotMatch(action, /posthog-code-host/);
+  assert.doesNotMatch(action, /posthog-code-model/);
+  // The tasks API key is required for delegated fixes and scrubbed like other secrets.
+  assert.match(index, /posthog-code-api-key and posthog-code-project-id are required/);
+  assert.match(index, /inputs\.posthogCodeApiKey/);
+  assert.match(read('src/command-replies.ts'), /inputs\.posthogCodeApiKey/);
+  assert.match(read('src/state.ts'), /inputs\.posthogCodeApiKey/);
+  // README must be explicit that delegation bypasses the action's fix guardrails.
+  assert.match(readme, /fix-executor/);
+  assert.match(readme, /bypasses this action's fix guardrails/);
+});
