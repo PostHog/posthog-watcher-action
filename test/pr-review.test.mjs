@@ -123,11 +123,14 @@ test('assessPullRequestSecurity flags real-looking credentials anywhere, includi
   assert.equal(placeholder.sensitive, false);
 });
 
-test('isReviewableCodeFile matches code but skips docs and examples', () => {
+test('isReviewableCodeFile matches code and manifests but skips docs', () => {
   assert.equal(isReviewableCodeFile('src/index.ts'), true);
   assert.equal(isReviewableCodeFile('lib/foo.py'), true);
+  assert.equal(isReviewableCodeFile('Dockerfile'), true);
+  assert.equal(isReviewableCodeFile('Makefile'), true);
+  // Example code is reviewable so generic repositories get coverage of sample apps.
+  assert.equal(isReviewableCodeFile('examples/demo.js'), true);
   assert.equal(isReviewableCodeFile('README.md'), false);
   assert.equal(isReviewableCodeFile('docs/guide.ts'), false);
-  assert.equal(isReviewableCodeFile('examples/demo.js'), false);
   assert.equal(isReviewableCodeFile('image.png'), false);
 });

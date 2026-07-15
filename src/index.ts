@@ -285,7 +285,7 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   const allowedExistingLabels = allowedRepositoryLabels(inputs.labelAllowlist, repositoryLabels, inputs.managedLabelPrefix);
   const allowedExistingLabelNames = allowedExistingLabels.map((label) => label.name);
 
-  const security = assessIssueSecurity(issue);
+  const security = assessIssueSecurity(issue, inputs.commentMarker);
   if (security.sensitive) {
     core.warning(`Security-sensitive issue detected. Reasons: ${security.reasons.join(', ')}`);
   }

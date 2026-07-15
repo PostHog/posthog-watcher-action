@@ -40,7 +40,7 @@ export async function reviewCommit(inputs: ActionInputs): Promise<CommitReviewRe
     tools: ['read', 'grep', 'find', 'ls'],
     prompt: `Review commit ${sha} for narrow, actionable regressions.
 
-This is a manual commit review for a PostHog SDK repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed.
+This is a manual commit review for the current repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed.
 
 Changed code files:
 ${codeFiles.map((file) => `- ${file}`).join('\n')}

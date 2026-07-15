@@ -20,7 +20,7 @@ export function isPosthogModel(model: string): boolean {
 
 export async function runPi(options: PiRunOptions): Promise<string> {
   if (options.inputs.model.startsWith('openai-codex/')) {
-    throw new Error('The openai-codex/* provider is not supported by this GitHub Action because it only configures API keys, not Codex OAuth. Use a PostHog gateway model such as posthog/claude-opus-4-8 or an OpenAI API model such as openai/gpt-5.5:high.');
+    throw new Error('The openai-codex/* provider is not supported by this GitHub Action because it only configures API keys, not Codex OAuth. Use a PostHog gateway model such as posthog/claude-opus-4-8 or an OpenAI API model such as openai/gpt-5.6-terra:high.');
   }
 
   const attempts = options.inputs.piRetries + 1;

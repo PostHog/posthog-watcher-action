@@ -33,7 +33,7 @@ export async function replyToCommand(octokit: Octokit, issueNumber: number, inpu
       url: issue.data.html_url,
       labels,
       comments: [],
-    });
+    }, inputs.commentMarker);
     if (security.sensitive && !inputs.allowSecurityAi) {
       body += 'This item looks security-sensitive, so watcher did not send it to pi/OpenAI. Human review is required.';
     } else {

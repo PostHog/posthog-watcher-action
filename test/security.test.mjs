@@ -4,17 +4,19 @@ import test from 'node:test';
 import { transform } from 'esbuild';
 
 const { code } = await transform(readFileSync('src/security.ts', 'utf8'), { loader: 'ts', format: 'esm' });
-const { assessIssueSecurity } = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+const { assessIssueSecurity: assessSecurity } = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+const COMMENT_MARKER = '<!-- custom-watcher-marker -->';
+const assessIssueSecurity = (snapshot, commentMarker = COMMENT_MARKER) => assessSecurity(snapshot, commentMarker);
 
 function issue(overrides = {}) {
   return {
-    owner: 'PostHog',
-    repo: 'posthog-js',
+    owner: 'example-org',
+    repo: 'example-project',
     number: 1,
     title: 'Bug report',
     body: '',
     author: 'reporter',
-    url: 'https://github.com/PostHog/posthog-js/issues/1',
+    url: 'https://github.com/example-org/example-project/issues/1',
     labels: [],
     comments: [],
     ...overrides,
@@ -23,7 +25,7 @@ function issue(overrides = {}) {
 
 test('token placeholders in issue examples are not treated as sensitive', () => {
   const assessment = assessIssueSecurity(issue({
-    body: '```js\npostHog.init(token, { bootstrap: { featureFlags: { inactiveFlag: false } } })\n```',
+    body: '```js\nanalytics.init(token, { enabled: true })\n```',
   }));
 
   assert.equal(assessment.sensitive, false);
@@ -62,14 +64,28 @@ test('watcher-generated bot comments do not poison later security assessments', 
   const assessment = assessIssueSecurity(issue({
     comments: [{
       author: 'github-actions[bot]',
+      body: '<!-- custom-watcher-marker -->\nThis issue looks security-sensitive. Detected terms: token',
+      url: 'https://github.com/example-org/example-project/issues/1#issuecomment-1',
+      createdAt: '2026-07-01T00:00:00Z',
+    }],
+  }), '<!-- custom-watcher-marker -->');
+
+  assert.equal(assessment.sensitive, false);
+  assert.deepEqual(assessment.reasons, []);
+});
+
+test('bot comments using a different marker remain part of the security assessment', () => {
+  const assessment = assessIssueSecurity(issue({
+    comments: [{
+      author: 'github-actions[bot]',
       body: '<!-- posthog-watcher-action -->\nThis issue looks security-sensitive. Detected terms: token',
-      url: 'https://github.com/PostHog/posthog-js/issues/1#issuecomment-1',
+      url: 'https://github.com/example-org/example-project/issues/1#issuecomment-2',
       createdAt: '2026-07-01T00:00:00Z',
     }],
   }));
 
-  assert.equal(assessment.sensitive, false);
-  assert.deepEqual(assessment.reasons, []);
+  assert.equal(assessment.sensitive, true);
+  assert.deepEqual(assessment.reasons, ['security']);
 });
 
 test('non-bot comments cannot hide security text by mentioning watcher marker', () => {
@@ -77,7 +93,7 @@ test('non-bot comments cannot hide security text by mentioning watcher marker', 
     comments: [{
       author: 'reporter',
       body: '<!-- posthog-watcher-action -->\nPotential security issue.',
-      url: 'https://github.com/PostHog/posthog-js/issues/1#issuecomment-2',
+      url: 'https://github.com/example-org/example-project/issues/1#issuecomment-3',
       createdAt: '2026-07-01T00:00:00Z',
     }],
   }));

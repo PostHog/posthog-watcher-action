@@ -265,7 +265,7 @@ function buildReviewPrompt(pr: PullRequestSnapshot, files: PullRequestFile[], di
   const fileList = files.map((file) => `- ${file.filename} (${file.status ?? 'modified'})`).join('\n');
   return `Review pull request #${pr.number}: ${pr.title}
 
-This is a code review for a PostHog SDK repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed: only report issues you are confident about (bugs, correctness, security, clear maintainability problems). Do not nitpick style. Use the read/grep/find/ls tools to inspect surrounding code before commenting. Do not modify files and do not make GitHub API calls.
+This is a code review for the current repository. Follow the karpathy-guidelines skill. Be conservative and evidence-backed: only report issues you are confident about (bugs, correctness, security, clear maintainability problems). Do not nitpick style. Use the read/grep/find/ls tools to inspect surrounding code before commenting. Do not modify files and do not make GitHub API calls.
 
 Only comment on lines that are part of this diff. Report the line number using the NEW file's line numbering (the right side of the diff).
 

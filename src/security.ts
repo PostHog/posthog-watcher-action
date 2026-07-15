@@ -31,9 +31,9 @@ export interface SecurityAssessment {
   reasons: string[];
 }
 
-export function assessIssueSecurity(issue: IssueSnapshot): SecurityAssessment {
+export function assessIssueSecurity(issue: IssueSnapshot, commentMarker: string): SecurityAssessment {
   const labelHaystack = issue.labels.join('\n');
-  const textHaystack = [issue.title, issue.body, ...issue.comments.filter((comment) => !isWatcherGeneratedComment(comment)).map((comment) => comment.body)].join('\n');
+  const textHaystack = [issue.title, issue.body, ...issue.comments.filter((comment) => !isWatcherGeneratedComment(comment, commentMarker)).map((comment) => comment.body)].join('\n');
   const reasons = new Set<string>();
 
   for (const { reason, pattern } of SECURITY_REPORT_PATTERNS) {
@@ -99,8 +99,8 @@ function looksLikeCredentialValue(value: string): boolean {
   return characterClasses >= 2;
 }
 
-function isWatcherGeneratedComment(comment: IssueSnapshot['comments'][number]): boolean {
-  return comment.author.endsWith('[bot]') && comment.body.includes('posthog-watcher-action');
+function isWatcherGeneratedComment(comment: IssueSnapshot['comments'][number], commentMarker: string): boolean {
+  return comment.author.endsWith('[bot]') && comment.body.includes(commentMarker);
 }
 
 function term(value: string): { reason: string; pattern: RegExp } {
