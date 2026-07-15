@@ -3,8 +3,12 @@ import * as core from '@actions/core';
 export type QueuedMode = 'auto' | 'triage' | 'investigate' | 'fix';
 export type Mode = QueuedMode | 'commit-review' | 'sweep' | 'enqueue' | 'drain-queue';
 
+export type PosthogRegion = 'us' | 'eu' | 'dev';
+
 export interface ActionInputs {
   openaiApiKey: string;
+  posthogApiKey: string;
+  posthogRegion: PosthogRegion;
   githubToken: string;
   model: string;
   issueNumber?: number;
@@ -60,8 +64,10 @@ export function getInputs(): ActionInputs {
 
   return {
     openaiApiKey: optionalSecret('openai-api-key'),
+    posthogApiKey: optionalSecret('posthog-api-key'),
+    posthogRegion: normalizePosthogRegion(core.getInput('posthog-region') || 'us'),
     githubToken: required('github-token'),
-    model: core.getInput('model') || 'openai/gpt-5.5:high',
+    model: core.getInput('model') || 'posthog/claude-opus-4-8',
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, 'issue-number') : undefined,
     mode,
     allowFix: parseBoolean(core.getInput('allow-fix')),
@@ -106,7 +112,7 @@ export function getInputs(): ActionInputs {
     stateRepo: core.getInput('state-repo'),
     stateBranch: core.getInput('state-branch') || 'posthog-watcher-state',
     commentMarker: core.getInput('comment-marker') || '<!-- posthog-watcher-action -->',
-    piVersion: core.getInput('pi-version') || '0.80.3',
+    piVersion: core.getInput('pi-version') || '0.80.6',
   };
 }
 
@@ -159,6 +165,11 @@ function normalizeQueuedMode(value: string): QueuedMode {
     return value;
   }
   throw new Error('queued-mode must be one of: auto, triage, investigate, fix');
+}
+
+function normalizePosthogRegion(value: string): PosthogRegion {
+  if (value === 'us' || value === 'eu' || value === 'dev') return value;
+  throw new Error('posthog-region must be one of: us, eu, dev');
 }
 
 function normalizePiSessionSharingMode(value: string): 'state-branch' | 'gist' {

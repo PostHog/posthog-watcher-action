@@ -34,6 +34,7 @@ jobs:
         uses: ./
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: openai/gpt-5.5:high
           github-token: ${{ secrets.GITHUB_TOKEN }}
           mode: commit-review
           commit-sha: ${{ inputs.commit-sha }}

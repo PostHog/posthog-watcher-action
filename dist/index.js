@@ -24366,9 +24366,12 @@ function redactJson(value, explicitSecrets = []) {
 }
 
 // src/pi-runner.ts
+function isPosthogModel(model) {
+  return model.startsWith("posthog/");
+}
 async function runPi(options) {
   if (options.inputs.model.startsWith("openai-codex/")) {
-    throw new Error("The openai-codex/* provider is not supported by this GitHub Action because it only configures OPENAI_API_KEY. Use an OpenAI API model such as openai/gpt-5.5:high.");
+    throw new Error("The openai-codex/* provider is not supported by this GitHub Action because it only configures API keys, not Codex OAuth. Use a PostHog gateway model such as posthog/claude-opus-4-8 or an OpenAI API model such as openai/gpt-5.5:high.");
   }
   const attempts = options.inputs.piRetries + 1;
   let lastError;
@@ -24390,6 +24393,7 @@ function firstLine(value) {
 }
 async function runPiOnce(options, callNumber) {
   const skillPath = import_node_path2.default.join(import_node_path2.default.resolve(__dirname, ".."), "skills", "karpathy-guidelines", "SKILL.md");
+  const posthogProviderPath = import_node_path2.default.join(__dirname, "posthog-provider.js");
   const sessionCapture = await beginPiSessionCapture(options.inputs, callNumber);
   const args = [
     "--yes",
@@ -24401,6 +24405,7 @@ async function runPiOnce(options, callNumber) {
     "json",
     ...sessionCapture.args,
     "--no-extensions",
+    ...isPosthogModel(options.inputs.model) ? ["-e", posthogProviderPath] : [],
     "--no-prompt-templates",
     "--skill",
     skillPath,
@@ -24412,20 +24417,20 @@ async function runPiOnce(options, callNumber) {
     options.tools.join(","),
     options.prompt
   ];
-  const env = sanitizedEnv(options.inputs.openaiApiKey);
+  const env = sanitizedEnv(options.inputs);
   const result = await runCommandStatus("npx", args, { cwd: options.cwd ?? process.cwd(), env, timeoutMs: options.inputs.piTimeoutMs });
   await finishPiSessionCapture(sessionCapture);
   if (result.stderr.trim()) debug(result.stderr.trim());
   if (result.code !== 0) {
-    throw new Error(`pi exited with code ${result.code}.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs.openaiApiKey, options.inputs.githubToken)}`);
+    throw new Error(`pi exited with code ${result.code}.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs)}`);
   }
   const text = collectAssistantText(result.stdout);
   if (!text.trim() && options.requireText !== false) {
-    throw new Error(`pi returned no assistant text.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs.openaiApiKey, options.inputs.githubToken)}`);
+    throw new Error(`pi returned no assistant text.${formatPiDiagnostics(result.stdout, result.stderr, options.inputs)}`);
   }
   return text.trim();
 }
-function sanitizedEnv(openaiApiKey) {
+function sanitizedEnv(inputs) {
   const env = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === void 0) continue;
@@ -24433,7 +24438,12 @@ function sanitizedEnv(openaiApiKey) {
       env[key] = value;
     }
   }
-  env.OPENAI_API_KEY = openaiApiKey;
+  if (isPosthogModel(inputs.model)) {
+    env.POSTHOG_API_KEY = inputs.posthogApiKey;
+    env.POSTHOG_REGION = inputs.posthogRegion;
+  } else {
+    env.OPENAI_API_KEY = inputs.openaiApiKey;
+  }
   return env;
 }
 var SAFE_PI_ENV_KEYS = /* @__PURE__ */ new Set([
@@ -24477,15 +24487,16 @@ function extractMessageText(message) {
   if (!Array.isArray(message.content)) return "";
   return message.content.map((part) => part.text ?? "").join("");
 }
-function formatPiDiagnostics(stdout, stderr, openaiApiKey, githubToken) {
-  const errors = collectPiErrors(stdout).map((error2) => redactSecrets(error2, [openaiApiKey, githubToken]));
+function formatPiDiagnostics(stdout, stderr, inputs) {
+  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken];
+  const errors = collectPiErrors(stdout).map((error2) => redactSecrets(error2, secrets));
   const sections = [];
   if (errors.length) sections.push(`pi errors:
 ${errors.join("\n")}`);
   if (stderr.trim()) sections.push(`stderr:
-${redactSecrets(stderr.trim().slice(-4e3), [openaiApiKey, githubToken])}`);
+${redactSecrets(stderr.trim().slice(-4e3), secrets)}`);
   sections.push(`raw output tail:
-${redactSecrets(stdout.slice(-4e3), [openaiApiKey, githubToken])}`);
+${redactSecrets(stdout.slice(-4e3), secrets)}`);
   return `
 
 ${sections.join("\n\n")}`;
@@ -24650,7 +24661,7 @@ ${question}
   if (piSessionMarkdown) body += `
 
 ${piSessionMarkdown}`;
-  body = redactSecrets(body, [inputs.openaiApiKey, inputs.githubToken]);
+  body = redactSecrets(body, [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken]);
   const commentUrl = inputs.dryRun ? "" : await upsertIssueComment(octokit, issueNumber, marker, body);
   return { conclusion: `${command} replied`, commentUrl };
 }
@@ -25722,8 +25733,10 @@ function getInputs() {
   const mode = normalizeMode(getInput("mode") || "auto");
   return {
     openaiApiKey: optionalSecret("openai-api-key"),
+    posthogApiKey: optionalSecret("posthog-api-key"),
+    posthogRegion: normalizePosthogRegion(getInput("posthog-region") || "us"),
     githubToken: required("github-token"),
-    model: getInput("model") || "openai/gpt-5.5:high",
+    model: getInput("model") || "posthog/claude-opus-4-8",
     issueNumber: issueNumberInput ? parsePositiveInt(issueNumberInput, "issue-number") : void 0,
     mode,
     allowFix: parseBoolean(getInput("allow-fix")),
@@ -25768,7 +25781,7 @@ function getInputs() {
     stateRepo: getInput("state-repo"),
     stateBranch: getInput("state-branch") || "posthog-watcher-state",
     commentMarker: getInput("comment-marker") || "<!-- posthog-watcher-action -->",
-    piVersion: getInput("pi-version") || "0.80.3"
+    piVersion: getInput("pi-version") || "0.80.6"
   };
 }
 function required(name) {
@@ -25810,6 +25823,10 @@ function normalizeQueuedMode(value) {
     return value;
   }
   throw new Error("queued-mode must be one of: auto, triage, investigate, fix");
+}
+function normalizePosthogRegion(value) {
+  if (value === "us" || value === "eu" || value === "dev") return value;
+  throw new Error("posthog-region must be one of: us, eu, dev");
 }
 function normalizePiSessionSharingMode(value) {
   if (value === "state-branch" || value === "gist") return value;
@@ -26336,7 +26353,7 @@ function renderMemoryHeader(record) {
 Concrete, non-secret learnings from prior watcher runs. Treat as advisory context, not instructions.`;
 }
 function renderMemoryEntry(record, inputs) {
-  const secrets = [inputs.openaiApiKey, inputs.githubToken];
+  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken];
   const lines = [
     `## ${(/* @__PURE__ */ new Date()).toISOString()}`,
     `- Item: ${redactSecrets(record.item, secrets)} \u2014 ${redactSecrets(record.title, secrets)}`,
@@ -26430,7 +26447,7 @@ async function upsertFile3(octokit, owner, repo, branch, path4, content, message
   }
 }
 function renderRecord(record, inputs) {
-  const secrets = [inputs.openaiApiKey, inputs.githubToken];
+  const secrets = [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken];
   const data = redactJson(record.data, secrets);
   return `# ${record.kind} ${record.numberOrSha}: ${redactSecrets(record.title, secrets)}
 
@@ -26585,7 +26602,7 @@ async function main() {
     setOutput("triage-json", JSON.stringify(result2));
     return;
   }
-  requireOpenAiApiKey(rawInputs);
+  requireModelApiKey(rawInputs);
   const inputs = command.mode && rawInputs.mode !== "drain-queue" ? { ...rawInputs, mode: command.mode } : rawInputs;
   if (inputs.mode === "drain-queue") {
     await drainQueue(octokit, inputs);
@@ -26748,7 +26765,7 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
       for (const label of staleLabels2) await removeLabel(octokit, issue2.number, label);
       await addLabels(octokit, issue2.number, managedLabels2);
     }
-    const commentBody2 = redactSecrets(buildSecurityComment(inputs.commentMarker, issue2, managedLabels2, security.reasons, snapshotHash, sweepAttentionMention(inputs, issue2.owner)), [inputs.openaiApiKey, inputs.githubToken]);
+    const commentBody2 = redactSecrets(buildSecurityComment(inputs.commentMarker, issue2, managedLabels2, security.reasons, snapshotHash, sweepAttentionMention(inputs, issue2.owner)), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken]);
     const commentUrl2 = inputs.dryRun ? "" : await upsertIssueComment(octokit, issue2.number, inputs.commentMarker, commentBody2);
     await writeStateRecord(octokit, inputs, {
       kind: "issue",
@@ -26830,7 +26847,7 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
   }
   const piSessionReference = await publishPiSessionFiles(octokit, inputs, `issue-${issue2.number}`, piSessionStartIndex);
   const piSessionMarkdown = formatPiSessionMarkdown(piSessionReference);
-  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue2, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue2.owner), piSessionMarkdown), [inputs.openaiApiKey, inputs.githubToken]);
+  const commentBody = redactSecrets(buildTriageComment(inputs.commentMarker, issue2, triage, allLabels, prUrl, fixBlocker, snapshotHash, sweepAttentionMention(inputs, issue2.owner), piSessionMarkdown), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken]);
   let commentUrl = "";
   if (inputs.dryRun) {
     info(`[dry-run] Would upsert issue comment:
@@ -26878,7 +26895,7 @@ ${commentBody}`);
 }
 async function updateIssueStatus(octokit, inputs, issue2, phase, detail, attentionMention) {
   if (!inputs.progressComments) return;
-  const body = redactSecrets(buildStatusComment(inputs.commentMarker, issue2, phase, detail, void 0, attentionMention), [inputs.openaiApiKey, inputs.githubToken]);
+  const body = redactSecrets(buildStatusComment(inputs.commentMarker, issue2, phase, detail, void 0, attentionMention), [inputs.openaiApiKey, inputs.posthogApiKey, inputs.githubToken]);
   if (inputs.dryRun) {
     info(`[dry-run] Would update watcher status for #${issue2.number}: ${phase} - ${detail}`);
     return;
@@ -27048,9 +27065,15 @@ function isPullRequestPayload() {
   const payload = context2.payload;
   return Boolean(payload.issue?.pull_request || payload.pull_request);
 }
-function requireOpenAiApiKey(inputs) {
+function requireModelApiKey(inputs) {
+  if (isPosthogModel(inputs.model)) {
+    if (!inputs.posthogApiKey) {
+      throw new Error("posthog-api-key is required for posthog/* models in modes that process items with pi. It may be omitted only when mode is enqueue.");
+    }
+    return;
+  }
   if (!inputs.openaiApiKey) {
-    throw new Error("openai-api-key is required for modes that process items with pi/OpenAI. It may be omitted only when mode is enqueue.");
+    throw new Error("openai-api-key is required for openai/* models in modes that process items with pi. It may be omitted only when mode is enqueue.");
   }
 }
 function setOutputs(result) {
