@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { PiAgent } from './agent.js';
 import { CommandEnvironment, formatCommandFailure } from './environment.js';
-import { checkDiffGuardrails, parseNumstat } from './guardrails.js';
+import { checkDiffGuardrails, checkIssueFixDiffGuardrails, parseNumstat } from './guardrails.js';
 import type { ActionInputs } from './inputs.js';
 import type { IssueSnapshot } from './issue-context.js';
 import { reviewGeneratedDiff } from './review-gate.js';
@@ -44,7 +44,7 @@ export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult,
     const validationFailure = reproductionResult.validationAlreadyRun ? undefined : await runValidation(inputs, env);
     await exposeUntrackedFilesForDiff(env);
     const stats = parseNumstat(await env.git(['diff', '--numstat']));
-    const guardrailFailures = checkDiffGuardrails(stats, {
+    const guardrailFailures = checkIssueFixDiffGuardrails(stats, {
       maxChangedFiles: inputs.maxChangedFiles,
       maxDiffLines: inputs.maxDiffLines,
     });

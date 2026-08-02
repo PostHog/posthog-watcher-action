@@ -34,6 +34,7 @@ ${formatReviewContext(context)}Return ONLY JSON:
 }
 
 Approve only if the diff is narrow, relevant to the supplied issue/PR context, low risk, and does not contain unrelated refactors, secrets, workflow changes, or suspicious code.
+Release metadata such as changesets or changelog entries may accompany a substantive fix, but reject a diff that contains only release metadata.
 
 Diff:
 \`\`\`diff

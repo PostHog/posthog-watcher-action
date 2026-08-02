@@ -100,11 +100,14 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   assert.match(agent, /requireText: false/);
   assert.doesNotMatch(agent, /'bash'/);
   assert.match(repairRun, /independent review gate rejected the diff/);
+  assert.match(repairRun, /checkIssueFixDiffGuardrails/);
   assert.match(repairRun, /ls-files', '--others', '--exclude-standard', '-z'/);
   assert.match(repairRun, /'add', '-N'/);
   const reviewGate = read('src/review-gate.ts');
   assert.match(reviewGate, /Review context/);
   assert.match(reviewGate, /Intended change/);
+  assert.match(reviewGate, /reject a diff that contains only release metadata/);
+  assert.match(read('src/issue-context.ts'), /Do not add a changeset or other release metadata unless this attempt also includes a substantive issue fix/);
 });
 
 test('pre-existing related fixes block duplicate fix PRs', () => {

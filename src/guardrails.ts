@@ -27,6 +27,18 @@ export function checkDiffGuardrails(stats: DiffStats, options: GuardrailOptions)
   return failures;
 }
 
+export function checkIssueFixDiffGuardrails(stats: DiffStats, options: GuardrailOptions): string[] {
+  const failures = checkDiffGuardrails(stats, options);
+  if (stats.files.length > 0 && stats.files.every(isChangesetFile)) {
+    failures.push('no substantive files changed; changeset-only diffs do not constitute an issue fix');
+  }
+  return failures;
+}
+
+export function isChangesetFile(file: string): boolean {
+  return file === '.changeset' || file.startsWith('.changeset/');
+}
+
 export function parseNumstat(output: string): DiffStats {
   const files: string[] = [];
   let diffLines = 0;
