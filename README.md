@@ -528,7 +528,8 @@ Behavior:
 
 ```bash
 pnpm install
-pnpm build
+pnpm check
+pnpm test
 ```
 
 `dist/` (`dist/index.js` and `dist/posthog-provider.js`) is the generated bundle the
