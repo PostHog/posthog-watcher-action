@@ -23,6 +23,7 @@ export async function reviewGeneratedDiff(inputs: ActionInputs, context?: Review
   const output = await runPi({
     inputs,
     tools: ['read', 'grep', 'find', 'ls'],
+    sessionMode: 'isolated',
     prompt: `Independently review this generated diff before a bot PR is pushed.
 
 ${formatReviewContext(context)}Return ONLY JSON:

@@ -1,7 +1,7 @@
 import * as github from '@actions/github';
 import { findOpenPullRequestForBranch, type Octokit, upsertIssueComment } from './github.js';
 import type { ActionInputs } from './inputs.js';
-import { formatPiSessionMarkdown, piSessionRecordCount, publishPiSessionFiles } from './pi-sessions.js';
+import { beginPiSessionScope, formatPiSessionMarkdown, publishPiSessionFiles } from './pi-sessions.js';
 import { runPi } from './pi-runner.js';
 import { redactSecrets } from './redact.js';
 import { assessIssueSecurity } from './security.js';
@@ -13,7 +13,7 @@ export async function replyToCommand(octokit: Octokit, issueNumber: number, inpu
   const branch = `posthog-watcher/issue-${issueNumber}`;
   const existingPr = await findOpenPullRequestForBranch(octokit, branch);
   const marker = `${inputs.commentMarker} command:${command}`;
-  const piSessionStartIndex = piSessionRecordCount();
+  const piSessionStartIndex = beginPiSessionScope();
 
   let body = `${marker}\n\n## PostHog Watcher ${command}\n\n`;
 

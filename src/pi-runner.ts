@@ -3,7 +3,7 @@ import path from 'node:path';
 import { runCommandStatus } from './git.js';
 import type { ActionInputs } from './inputs.js';
 import { consumePiCall } from './pi-budget.js';
-import { beginPiSessionCapture, finishPiSessionCapture } from './pi-sessions.js';
+import { beginPiSessionCapture, finishPiSessionCapture, type PiSessionMode } from './pi-sessions.js';
 import { redactSecrets } from './redact.js';
 
 export interface PiRunOptions {
@@ -12,6 +12,7 @@ export interface PiRunOptions {
   inputs: ActionInputs;
   cwd?: string;
   requireText?: boolean;
+  sessionMode?: PiSessionMode;
 }
 
 export function isPosthogModel(model: string): boolean {
@@ -52,7 +53,7 @@ async function runPiOnce(options: PiRunOptions, callNumber: number): Promise<str
   // next to the bundled entrypoint. pi's --no-extensions only disables
   // discovery; explicit -e paths still load.
   const posthogProviderPath = path.join(__dirname, 'posthog-provider.js');
-  const sessionCapture = await beginPiSessionCapture(options.inputs, callNumber);
+  const sessionCapture = await beginPiSessionCapture(options.inputs, callNumber, options.sessionMode ?? 'primary');
   const args = [
     '--yes',
     '--package',

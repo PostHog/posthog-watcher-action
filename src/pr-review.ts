@@ -17,7 +17,7 @@ import {
 } from './github.js';
 import type { ActionInputs } from './inputs.js';
 import { getPiCallCount } from './pi-budget.js';
-import { formatPiSessionMarkdown, piSessionRecordCount, publishPiSessionFiles } from './pi-sessions.js';
+import { beginPiSessionScope, formatPiSessionMarkdown, publishPiSessionFiles } from './pi-sessions.js';
 import { runPi } from './pi-runner.js';
 import { parsePrReview, type PrReviewResult, type ReviewFinding, type ReviewSeverity } from './pr-review-schema.js';
 import { redactSecrets } from './redact.js';
@@ -60,7 +60,7 @@ export async function reviewPullRequest(octokit: Octokit, pullNumber: number, in
     return { conclusion: 'skipped fork PR review', commentUrl: '', skipped: true };
   }
 
-  const piSessionStartIndex = piSessionRecordCount();
+  const piSessionStartIndex = beginPiSessionScope();
   const allFiles = await listPullRequestFiles(octokit, pullNumber);
   const codeFiles = allFiles.filter((file) => isReviewableCodeFile(file.filename) && file.status !== 'removed');
   if (!codeFiles.length) {

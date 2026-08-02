@@ -260,6 +260,8 @@ test('pi session sharing is opt-in and links forkable JSONL sessions', () => {
   const inputs = read('src/inputs.ts');
   const piRunner = read('src/pi-runner.ts');
   const piSessions = read('src/pi-sessions.ts');
+  const reviewGate = read('src/review-gate.ts');
+  const index = read('src/index.ts');
   const comment = read('src/comment.ts');
   const readme = read('README.md');
   assert.match(action, /pi-session-sharing/);
@@ -270,8 +272,15 @@ test('pi session sharing is opt-in and links forkable JSONL sessions', () => {
   assert.match(inputs, /piSessionSharingMode/);
   assert.match(inputs, /piSessionGistToken/);
   assert.match(piRunner, /beginPiSessionCapture/);
+  assert.match(piRunner, /options\.sessionMode \?\? 'primary'/);
+  assert.match(piSessions, /beginPiSessionScope/);
   assert.match(piSessions, /--no-session/);
   assert.match(piSessions, /--session-dir/);
+  assert.match(piSessions, /args: \['--session', primarySessionPath\]/);
+  assert.match(piSessions, /publishing only/);
+  assert.match(reviewGate, /sessionMode: 'isolated'/);
+  assert.match(index, /beginPiSessionScope\(\)/);
+  assert.match(piSessions, /The resumable JSONL pi session/);
   assert.match(piSessions, /pi --fork path\/to\/session\.jsonl/);
   assert.match(piSessions, /pi-sessions\//);
   assert.match(piSessions, /gists\.create/);

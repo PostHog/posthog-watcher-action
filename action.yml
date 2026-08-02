@@ -216,11 +216,11 @@ inputs:
     required: false
     default: 'true'
   pi-session-sharing:
-    description: Save captured pi JSONL session files and link resume instructions from watcher comments
+    description: Save the primary pi JSONL session and link resume instructions from watcher comments
     required: false
     default: 'false'
   pi-session-sharing-mode:
-    description: Where to save captured pi JSONL session files. One of state-branch or gist
+    description: Where to save the primary pi JSONL session. One of state-branch or gist
     required: false
     default: state-branch
   pi-session-gist-token:

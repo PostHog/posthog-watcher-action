@@ -26,7 +26,7 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Pulls failing GitHub Actions job log snippets and review comments into PR repair prompts when available.
 - Supports manual commit review mode for selected commits.
 - Supports capped scheduled backlog sweeps.
-- Can optionally save pi JSONL session files and link fork/resume instructions from watcher comments.
+- Can optionally save one resumable primary pi JSONL session and link fork/resume instructions from watcher comments.
 - Can enqueue issue/PR events into a durable FIFO queue and drain them sequentially from a scheduled/manual worker.
 - Can write durable markdown records, an index-backed dashboard, and configurable repo memory to a state branch when enabled.
 - Enforces `max-pi-calls`, `pi-timeout-ms`, and `pi-retries` budgets per run.
@@ -493,8 +493,8 @@ Behavior:
 | `state-enabled` | `false` | Write durable markdown state records, optionally per-repo memory, and dashboard. |
 | `repo-memory-enabled` | `true` | Read/write advisory repo memory when `state-enabled` is true. |
 | `progress-comments` | `true` | Update the marker-backed issue comment with in-progress phase/status updates. |
-| `pi-session-sharing` | `false` | Save captured pi JSONL session files and add download/`pi --fork` instructions to watcher comments. |
-| `pi-session-sharing-mode` | `state-branch` | Where to save captured pi sessions: `state-branch` or `gist`. |
+| `pi-session-sharing` | `false` | Save the resumable primary pi JSONL session and add download/`pi --fork` instructions to watcher comments. |
+| `pi-session-sharing-mode` | `state-branch` | Where to save the primary pi session: `state-branch` or `gist`. |
 | `pi-session-gist-token` | empty | Token with `gist` permission, required when `pi-session-sharing-mode: gist`. |
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
@@ -509,7 +509,7 @@ Behavior:
 - Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only the selected provider's credential to the pi process (`POSTHOG_API_KEY` for `posthog/*` models, `OPENAI_API_KEY` for `openai/*` models), and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
 - `posthog/*` models load a bundled pi extension (`dist/posthog-provider.js`) that registers the PostHog LLM gateway as a pi model provider; extension auto-discovery stays disabled via `--no-extensions`.
 - The wrapper, not `pi`, performs GitHub API mutations.
-- `pi-session-sharing` is disabled by default. When enabled, pi runs with a temporary session directory, the wrapper saves the generated `.jsonl` files under `pi-sessions/` on `state-branch` by default, and comments include `pi --fork path/to/session.jsonl` handoff instructions. Set `pi-session-sharing-mode: gist` plus `pi-session-gist-token` to upload sessions to a private gist instead of the state branch.
+- `pi-session-sharing` is disabled by default. When enabled, triage and repair calls continue one primary session in a temporary directory, while independent review calls remain ephemeral. The wrapper saves that primary `.jsonl` under `pi-sessions/` on `state-branch` by default, and comments include `pi --fork path/to/session.jsonl` handoff instructions. Set `pi-session-sharing-mode: gist` plus `pi-session-gist-token` to upload the session to a private gist instead of the state branch.
 - Draft PR creation is skipped if the diff is too large or touches workflow files, lockfiles, or minified files.
 - Watcher fix/repair commits are created through GitHub's commit API instead of raw `git commit`/`git push`, so they are GitHub-signed Verified commits.
 - New draft fix PRs use `.github/pull_request_template.md` when present and append watcher-generated summary, rationale, changed files, and validation details.

@@ -13,7 +13,7 @@ import { formatIssuePrompt, type IssueSnapshot } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
 import { filterAllowedLabels } from './labels.js';
 import { getPiCallCount, resetPiCallCount } from './pi-budget.js';
-import { formatPiSessionMarkdown, piSessionRecordCount, publishPiSessionFiles } from './pi-sessions.js';
+import { beginPiSessionScope, formatPiSessionMarkdown, publishPiSessionFiles } from './pi-sessions.js';
 import { isPosthogModel, runPi } from './pi-runner.js';
 import { replyToPullRequestReviewComment, reviewPullRequest, type PullRequestReviewResult, type ReviewThreadRef } from './pr-review.js';
 import { enqueueCurrentPayload, incrementQueueAttempt, readQueue, removeQueueItem, type QueueItem } from './queue.js';
@@ -251,7 +251,7 @@ async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
 
 async function processIssue(octokit: Octokit, issueNumber: number, inputs: ActionInputs, command: CommandResolution, forcedCommentId?: number): Promise<ProcessIssueResult> {
   core.info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
-  const piSessionStartIndex = piSessionRecordCount();
+  const piSessionStartIndex = beginPiSessionScope();
 
   const issue = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
   if (await shouldSkipSweepIssueAuthor(octokit, inputs, command, issue)) {
