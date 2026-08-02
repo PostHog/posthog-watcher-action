@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import { PiAgent } from './agent.js';
 import { CommandEnvironment, formatCommandFailure } from './environment.js';
-import { checkDiffGuardrails, checkIssueFixDiffGuardrails, parseNumstat } from './guardrails.js';
+import { checkDiffGuardrails, parseNumstat } from './guardrails.js';
 import type { ActionInputs } from './inputs.js';
 import type { IssueSnapshot } from './issue-context.js';
 import { reviewGeneratedDiff } from './review-gate.js';
@@ -44,7 +44,11 @@ export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult,
     const validationFailure = reproductionResult.validationAlreadyRun ? undefined : await runValidation(inputs, env);
     await exposeUntrackedFilesForDiff(env);
     const stats = parseNumstat(await env.git(['diff', '--numstat']));
-    const guardrailFailures = checkIssueFixDiffGuardrails(stats, {
+    if (!stats.files.length) {
+      core.warning('Skipping PR because the repair attempt produced no file changes.');
+      return undefined;
+    }
+    const guardrailFailures = checkDiffGuardrails(stats, {
       maxChangedFiles: inputs.maxChangedFiles,
       maxDiffLines: inputs.maxDiffLines,
     });
@@ -55,6 +59,7 @@ export async function runIssueRepair(issue: IssueSnapshot, triage: TriageResult,
         subject: `Issue #${issue.number}: ${issue.title}`,
         summary: triage.summary,
         intendedChange: [triage.fix.suggestedApproach || triage.fix.reason, trustedInstructions ? `Trusted maintainer instructions: ${trustedInstructions}` : ''].filter(Boolean).join('\n\n'),
+        requireSubstantiveFix: true,
       });
       if (reviewGate.approve) {
         return { files: stats.files };

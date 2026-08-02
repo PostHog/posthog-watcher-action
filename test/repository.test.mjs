@@ -100,13 +100,15 @@ test('fix PRs use stable per-issue branches for reuse', () => {
   assert.match(agent, /requireText: false/);
   assert.doesNotMatch(agent, /'bash'/);
   assert.match(repairRun, /independent review gate rejected the diff/);
-  assert.match(repairRun, /checkIssueFixDiffGuardrails/);
+  assert.match(repairRun, /repair attempt produced no file changes/);
+  assert.match(repairRun, /requireSubstantiveFix: true/);
   assert.match(repairRun, /ls-files', '--others', '--exclude-standard', '-z'/);
   assert.match(repairRun, /'add', '-N'/);
   const reviewGate = read('src/review-gate.ts');
   assert.match(reviewGate, /Review context/);
   assert.match(reviewGate, /Intended change/);
-  assert.match(reviewGate, /reject a diff that contains only release metadata/);
+  assert.match(reviewGate, /Release or version metadata alone is not a substantive fix/);
+  assert.match(read('src/review-gate-schema.ts'), /!requireSubstantiveFix \|\| substantiveFix/);
   assert.match(read('src/issue-context.ts'), /Do not add a changeset or other release metadata unless this attempt also includes a substantive issue fix/);
 });
 
