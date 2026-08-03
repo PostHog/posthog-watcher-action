@@ -11,7 +11,10 @@ export interface PiSessionCapture {
   args: string[];
   callNumber: number;
   before: Set<string>;
+  sessionPath?: string;
 }
+
+export type PiSessionMode = 'primary' | 'isolated';
 
 export interface PiSessionRecord {
   callNumber: number;
@@ -28,35 +31,47 @@ export interface PiSessionReference {
 
 const sessionRoot = path.join(os.tmpdir(), 'posthog-watcher-pi-sessions');
 const records: PiSessionRecord[] = [];
-const recordedPaths = new Set<string>();
+let primarySessionPath: string | undefined;
 
-export async function beginPiSessionCapture(inputs: ActionInputs, callNumber: number): Promise<PiSessionCapture> {
-  if (!inputs.piSessionSharing) {
+export function beginPiSessionScope(): number {
+  primarySessionPath = undefined;
+  return records.length;
+}
+
+export async function beginPiSessionCapture(inputs: ActionInputs, callNumber: number, mode: PiSessionMode): Promise<PiSessionCapture> {
+  if (!inputs.piSessionSharing || mode === 'isolated') {
     return { enabled: false, args: ['--no-session'], callNumber, before: new Set() };
   }
 
   await mkdir(sessionRoot, { recursive: true });
+  if (primarySessionPath) {
+    return {
+      enabled: true,
+      args: ['--session', primarySessionPath],
+      callNumber,
+      before: new Set(),
+      sessionPath: primarySessionPath,
+    };
+  }
+
   return {
     enabled: true,
-    args: ['--session-dir', sessionRoot, '--name', `posthog-watcher call ${callNumber}`],
+    args: ['--session-dir', sessionRoot, '--name', 'posthog-watcher'],
     callNumber,
     before: new Set(await listSessionFiles()),
   };
 }
 
 export async function finishPiSessionCapture(capture: PiSessionCapture): Promise<void> {
-  if (!capture.enabled) return;
+  if (!capture.enabled || capture.sessionPath) return;
 
-  const after = await listSessionFiles();
-  for (const file of after) {
-    if (capture.before.has(file) || recordedPaths.has(file)) continue;
-    recordedPaths.add(file);
-    records.push({ callNumber: capture.callNumber, path: file });
-  }
-}
+  const created = (await listSessionFiles()).filter((file) => !capture.before.has(file));
+  const sessionPath = created.at(-1);
+  if (!sessionPath) return;
+  if (created.length > 1) core.warning(`Pi created ${created.length} session files; continuing and publishing only ${sessionPath}.`);
 
-export function piSessionRecordCount(): number {
-  return records.length;
+  primarySessionPath = sessionPath;
+  records.push({ callNumber: capture.callNumber, path: sessionPath });
 }
 
 export async function publishPiSessionFiles(octokit: Octokit, inputs: ActionInputs, subject: string, startIndex: number): Promise<PiSessionReference | undefined> {
@@ -96,28 +111,28 @@ export function formatPiSessionMarkdown(reference: PiSessionReference | undefine
   if (reference.kind === 'gist') {
     return `### Pi session
 
-The JSONL pi session file(s) for this run were saved to a private gist: ${reference.gistUrl ?? '(gist URL unavailable)'}
+The resumable JSONL pi session for this run was saved to a private gist: ${reference.gistUrl ?? '(gist URL unavailable)'}
 
-Download one locally, then fork it into your own pi session:
+Download it locally, then fork it into your own pi session:
 
 \`\`\`bash
 pi --fork path/to/session.jsonl
 \`\`\`
 
-Saved session files:
+Saved session:
 ${fileList}
 `;
   }
 
   return `### Pi session
 
-The JSONL pi session file(s) for this run were saved to the \`${reference.branch}\` branch. Download one locally, then fork it into your own pi session:
+The resumable JSONL pi session for this run was saved to the \`${reference.branch}\` branch. Download it locally, then fork it into your own pi session:
 
 \`\`\`bash
 pi --fork path/to/session.jsonl
 \`\`\`
 
-Saved session files:
+Saved session:
 ${fileList}
 `;
 }
@@ -234,11 +249,11 @@ async function upsertFile(octokit: Octokit, owner: string, repo: string, branch:
 
 function renderReadme(owner: string, repo: string, files: Array<{ name: string; url: string }>): string {
   const fileList = files.map((file) => `- [\`${file.name}\`](${file.url})`).join('\n');
-  return `# PostHog Watcher pi sessions
+  return `# PostHog Watcher pi session
 
-These JSONL files are pi sessions captured from posthog-watcher-action.
+This JSONL file is the resumable primary pi session captured from posthog-watcher-action.
 
-To resume locally, download a session file, check out the relevant repository, then fork the session:
+To resume locally, download the session file, check out the relevant repository, then fork the session:
 
 \`\`\`bash
 gh repo clone ${owner}/${repo}
@@ -248,7 +263,7 @@ pi --fork path/to/session.jsonl
 
 Use \`--fork\` rather than \`--session\` when taking over a CI-generated session so your local work continues in a new session file.
 
-Saved session files:
+Saved session:
 ${fileList}
 `;
 }
