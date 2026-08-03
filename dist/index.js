@@ -24152,30 +24152,40 @@ var import_node_os = __toESM(require("node:os"));
 var import_node_path = __toESM(require("node:path"));
 var sessionRoot = import_node_path.default.join(import_node_os.default.tmpdir(), "posthog-watcher-pi-sessions");
 var records = [];
-var recordedPaths = /* @__PURE__ */ new Set();
-async function beginPiSessionCapture(inputs, callNumber) {
-  if (!inputs.piSessionSharing) {
+var primarySessionPath;
+function beginPiSessionScope() {
+  primarySessionPath = void 0;
+  return records.length;
+}
+async function beginPiSessionCapture(inputs, callNumber, mode) {
+  if (!inputs.piSessionSharing || mode === "isolated") {
     return { enabled: false, args: ["--no-session"], callNumber, before: /* @__PURE__ */ new Set() };
   }
   await (0, import_promises.mkdir)(sessionRoot, { recursive: true });
+  if (primarySessionPath) {
+    return {
+      enabled: true,
+      args: ["--session", primarySessionPath],
+      callNumber,
+      before: /* @__PURE__ */ new Set(),
+      sessionPath: primarySessionPath
+    };
+  }
   return {
     enabled: true,
-    args: ["--session-dir", sessionRoot, "--name", `posthog-watcher call ${callNumber}`],
+    args: ["--session-dir", sessionRoot, "--name", "posthog-watcher"],
     callNumber,
     before: new Set(await listSessionFiles())
   };
 }
 async function finishPiSessionCapture(capture) {
-  if (!capture.enabled) return;
-  const after = await listSessionFiles();
-  for (const file of after) {
-    if (capture.before.has(file) || recordedPaths.has(file)) continue;
-    recordedPaths.add(file);
-    records.push({ callNumber: capture.callNumber, path: file });
-  }
-}
-function piSessionRecordCount() {
-  return records.length;
+  if (!capture.enabled || capture.sessionPath) return;
+  const created = (await listSessionFiles()).filter((file) => !capture.before.has(file));
+  const sessionPath = created.at(-1);
+  if (!sessionPath) return;
+  if (created.length > 1) warning(`Pi created ${created.length} session files; continuing and publishing only ${sessionPath}.`);
+  primarySessionPath = sessionPath;
+  records.push({ callNumber: capture.callNumber, path: sessionPath });
 }
 async function publishPiSessionFiles(octokit, inputs, subject, startIndex) {
   if (!inputs.piSessionSharing || inputs.dryRun) return void 0;
@@ -24207,27 +24217,27 @@ function formatPiSessionMarkdown(reference) {
   if (reference.kind === "gist") {
     return `### Pi session
 
-The JSONL pi session file(s) for this run were saved to a private gist: ${reference.gistUrl ?? "(gist URL unavailable)"}
+The resumable JSONL pi session for this run was saved to a private gist: ${reference.gistUrl ?? "(gist URL unavailable)"}
 
-Download one locally, then fork it into your own pi session:
+Download it locally, then fork it into your own pi session:
 
 \`\`\`bash
 pi --fork path/to/session.jsonl
 \`\`\`
 
-Saved session files:
+Saved session:
 ${fileList}
 `;
   }
   return `### Pi session
 
-The JSONL pi session file(s) for this run were saved to the \`${reference.branch}\` branch. Download one locally, then fork it into your own pi session:
+The resumable JSONL pi session for this run was saved to the \`${reference.branch}\` branch. Download it locally, then fork it into your own pi session:
 
 \`\`\`bash
 pi --fork path/to/session.jsonl
 \`\`\`
 
-Saved session files:
+Saved session:
 ${fileList}
 `;
 }
@@ -24329,11 +24339,11 @@ async function upsertFile(octokit, owner, repo, branch, filePath, content, messa
 }
 function renderReadme(owner, repo, files) {
   const fileList = files.map((file) => `- [\`${file.name}\`](${file.url})`).join("\n");
-  return `# PostHog Watcher pi sessions
+  return `# PostHog Watcher pi session
 
-These JSONL files are pi sessions captured from posthog-watcher-action.
+This JSONL file is the resumable primary pi session captured from posthog-watcher-action.
 
-To resume locally, download a session file, check out the relevant repository, then fork the session:
+To resume locally, download the session file, check out the relevant repository, then fork the session:
 
 \`\`\`bash
 gh repo clone ${owner}/${repo}
@@ -24343,7 +24353,7 @@ pi --fork path/to/session.jsonl
 
 Use \`--fork\` rather than \`--session\` when taking over a CI-generated session so your local work continues in a new session file.
 
-Saved session files:
+Saved session:
 ${fileList}
 `;
 }
@@ -24476,7 +24486,7 @@ function firstLine(value) {
 async function runPiOnce(options, callNumber) {
   const skillPath = import_node_path2.default.join(import_node_path2.default.resolve(__dirname, ".."), "skills", "karpathy-guidelines", "SKILL.md");
   const posthogProviderPath = import_node_path2.default.join(__dirname, "posthog-provider.js");
-  const sessionCapture = await beginPiSessionCapture(options.inputs, callNumber);
+  const sessionCapture = await beginPiSessionCapture(options.inputs, callNumber, options.sessionMode ?? "primary");
   const args = [
     "--yes",
     "--package",
@@ -24701,7 +24711,7 @@ async function replyToCommand(octokit, issueNumber, inputs, command, questionOve
   const branch = `posthog-watcher/issue-${issueNumber}`;
   const existingPr = await findOpenPullRequestForBranch(octokit, branch);
   const marker = `${inputs.commentMarker} command:${command}`;
-  const piSessionStartIndex = piSessionRecordCount();
+  const piSessionStartIndex = beginPiSessionScope();
   let body = `${marker}
 
 ## PostHog Watcher ${command}
@@ -25486,6 +25496,7 @@ ${fence(failureSummary)}
 Requirements:
 - Fix only the reported validation/guardrail/review failures.
 - If the previous diff was a no-op/refactor, replace it with a behavior-changing fix for the issue or remove it.
+- Do not add a changeset or other release metadata unless this attempt also includes a substantive issue fix.
 - Preserve any reproduction/regression check from earlier attempts and keep it passing after the fix.
 - If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values.
 - Read root RELEASING.md if present and follow its instructions for adding or preserving the required changeset/changelog entry.
@@ -25638,6 +25649,30 @@ function numericStat(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+// src/review-gate-schema.ts
+function parseReviewGate(text, requireSubstantiveFix = false) {
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  if (first === -1 || last <= first) return rejectedResult("review gate did not return JSON");
+  try {
+    const raw = JSON.parse(text.slice(first, last + 1));
+    const confidence = typeof raw.confidence === "number" ? Math.max(0, Math.min(1, raw.confidence)) : 0;
+    const substantiveFix = raw.substantiveFix === true;
+    return {
+      approve: Boolean(raw.approve) && confidence >= 0.75 && (!requireSubstantiveFix || substantiveFix),
+      substantiveFix,
+      confidence,
+      reason: typeof raw.reason === "string" ? raw.reason : "",
+      risks: Array.isArray(raw.risks) ? raw.risks.filter((risk) => typeof risk === "string") : []
+    };
+  } catch {
+    return rejectedResult("review gate JSON parse failed");
+  }
+}
+function rejectedResult(reason) {
+  return { approve: false, substantiveFix: false, confidence: 0, reason, risks: [] };
+}
+
 // src/review-gate.ts
 async function reviewGeneratedDiff(inputs, context3) {
   const diff = await git(["diff", "--unified=80"]);
@@ -25646,24 +25681,26 @@ async function reviewGeneratedDiff(inputs, context3) {
   const output = await runPi({
     inputs,
     tools: ["read", "grep", "find", "ls"],
+    sessionMode: "isolated",
     prompt: `Independently review this generated diff before a bot PR is pushed.
 
 ${formatReviewContext(context3)}Return ONLY JSON:
 {
   "approve": true,
+  "substantiveFix": true,
   "confidence": 0.0,
   "reason": "short reason",
   "risks": ["risk bullets"]
 }
 
 Approve only if the diff is narrow, relevant to the supplied issue/PR context, low risk, and does not contain unrelated refactors, secrets, workflow changes, or suspicious code.
-
+${formatSubstantiveFixRequirement(context3)}
 Diff:
 \`\`\`diff
 ${truncated}
 \`\`\``
   });
-  const result = parseReviewGate(output);
+  const result = parseReviewGate(output, context3?.requireSubstantiveFix);
   info(`Review gate: ${result.approve ? "approved" : "rejected"} (${Math.round(result.confidence * 100)}%) - ${result.reason}`);
   return result;
 }
@@ -25677,25 +25714,14 @@ ${context3.summary ? `- Summary: ${context3.summary}
 ` : ""}
 `;
 }
+function formatSubstantiveFixRequirement(context3) {
+  if (!context3?.requireSubstantiveFix) return "";
+  return `Set substantiveFix to true only when the diff itself contains an implementation, test, configuration, or documentation change that directly addresses the issue. Release or version metadata alone is not a substantive fix. This review must reject the diff unless substantiveFix is true.
+`;
+}
 function truncate3(value, max) {
   return value.length > max ? `${value.slice(0, max)}
 ...<truncated>` : value;
-}
-function parseReviewGate(text) {
-  const first = text.indexOf("{");
-  const last = text.lastIndexOf("}");
-  if (first === -1 || last <= first) return { approve: false, confidence: 0, reason: "review gate did not return JSON", risks: [] };
-  try {
-    const raw = JSON.parse(text.slice(first, last + 1));
-    return {
-      approve: Boolean(raw.approve) && typeof raw.confidence === "number" && raw.confidence >= 0.75,
-      confidence: typeof raw.confidence === "number" ? Math.max(0, Math.min(1, raw.confidence)) : 0,
-      reason: typeof raw.reason === "string" ? raw.reason : "",
-      risks: Array.isArray(raw.risks) ? raw.risks.filter((risk) => typeof risk === "string") : []
-    };
-  } catch {
-    return { approve: false, confidence: 0, reason: "review gate JSON parse failed", risks: [] };
-  }
 }
 
 // src/repair-run.ts
@@ -25717,6 +25743,10 @@ async function runIssueRepair(issue2, triage, inputs, trustedInstructions = "") 
     const validationFailure = reproductionResult.validationAlreadyRun ? void 0 : await runValidation(inputs, env);
     await exposeUntrackedFilesForDiff(env);
     const stats = parseNumstat(await env.git(["diff", "--numstat"]));
+    if (!stats.files.length) {
+      warning("Skipping PR because the repair attempt produced no file changes.");
+      return void 0;
+    }
     const guardrailFailures = checkDiffGuardrails(stats, {
       maxChangedFiles: inputs.maxChangedFiles,
       maxDiffLines: inputs.maxDiffLines
@@ -25726,7 +25756,8 @@ async function runIssueRepair(issue2, triage, inputs, trustedInstructions = "") 
       const reviewGate = await reviewGeneratedDiff(inputs, {
         subject: `Issue #${issue2.number}: ${issue2.title}`,
         summary: triage.summary,
-        intendedChange: [triage.fix.suggestedApproach || triage.fix.reason, trustedInstructions ? `Trusted maintainer instructions: ${trustedInstructions}` : ""].filter(Boolean).join("\n\n")
+        intendedChange: [triage.fix.suggestedApproach || triage.fix.reason, trustedInstructions ? `Trusted maintainer instructions: ${trustedInstructions}` : ""].filter(Boolean).join("\n\n"),
+        requireSubstantiveFix: true
       });
       if (reviewGate.approve) {
         return { files: stats.files };
@@ -26539,7 +26570,7 @@ async function reviewPullRequest(octokit, pullNumber, inputs) {
     info(`Skipping PR review for fork PR #${pullNumber} (${pr.headRepoFullName ?? "unknown fork"}); only same-repo pull requests are reviewed.`);
     return { conclusion: "skipped fork PR review", commentUrl: "", skipped: true };
   }
-  const piSessionStartIndex = piSessionRecordCount();
+  const piSessionStartIndex = beginPiSessionScope();
   const allFiles = await listPullRequestFiles(octokit, pullNumber);
   const codeFiles = allFiles.filter((file) => isReviewableCodeFile(file.filename) && file.status !== "removed");
   if (!codeFiles.length) {
@@ -27417,7 +27448,7 @@ async function sweep(octokit, inputs) {
 }
 async function processIssue(octokit, issueNumber, inputs, command, forcedCommentId) {
   info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
-  const piSessionStartIndex = piSessionRecordCount();
+  const piSessionStartIndex = beginPiSessionScope();
   const issue2 = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
   if (await shouldSkipSweepIssueAuthor(octokit, inputs, command, issue2)) {
     info(`Skipping issue #${issue2.number} during sweep because it was created by trusted ${issue2.authorAssociation} author ${issue2.author}.`);
