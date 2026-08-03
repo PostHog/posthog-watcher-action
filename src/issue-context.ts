@@ -156,6 +156,7 @@ ${fence(failureSummary)}
 Requirements:
 - Fix only the reported validation/guardrail/review failures.
 - If the previous diff was a no-op/refactor, replace it with a behavior-changing fix for the issue or remove it.
+- Do not add a changeset or other release metadata unless this attempt also includes a substantive issue fix.
 - Preserve any reproduction/regression check from earlier attempts and keep it passing after the fix.
 - If the issue provides current vs expected output, add or update a targeted regression test or executable check for those exact values.
 - Read root RELEASING.md if present and follow its instructions for adding or preserving the required changeset/changelog entry.
