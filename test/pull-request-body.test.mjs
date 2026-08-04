@@ -75,6 +75,25 @@ test('fills explicit watcher markers in custom templates', () => {
   assert.doesNotMatch(body, /\n---\n/);
 });
 
+test('ignores conventional headings inside comments and fenced examples', () => {
+  const template = `<!--
+## Problem
+## Changes
+-->
+
+\`\`\`markdown
+## Problem
+## Changes
+\`\`\`
+
+# Reviewer notes
+`;
+  const body = buildPullRequestBody({ issue, triage, files: ['src/fix.ts'], validationCommand: '', template });
+
+  assert.match(body, /\n---\n\nFixes #4405/);
+  assert.equal(body.match(/Fixes #4405/g)?.length, 1);
+});
+
 test('falls back to appending watcher details for unrecognized templates', () => {
   const body = buildPullRequestBody({ issue, triage, files: ['src/fix.ts'], validationCommand: '', template: '# Reviewer notes\n\nAdd notes here.\n' });
 

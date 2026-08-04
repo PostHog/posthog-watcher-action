@@ -75,7 +75,7 @@ function replaceMarker(body: string, marker: string, content: string): { body: s
 
 function insertUnderHeading(body: string, heading: string, content: string): { body: string; replaced: boolean } {
   const lines = body.split('\n');
-  const headingIndex = lines.findIndex((line) => normalizeHeading(line) === heading.toLowerCase());
+  const headingIndex = findVisibleHeadingIndex(lines, heading);
   if (headingIndex === -1) return { body, replaced: false };
   lines.splice(headingIndex + 1, 0, '', content);
   return { body: lines.join('\n'), replaced: true };
@@ -91,7 +91,58 @@ function normalizeHeading(line: string): string {
 }
 
 function templateHasHeading(template: string | undefined, heading: string): boolean {
-  return Boolean(template?.split('\n').some((line) => normalizeHeading(line) === heading.toLowerCase()));
+  return template ? findVisibleHeadingIndex(template.split('\n'), heading) !== -1 : false;
+}
+
+function findVisibleHeadingIndex(lines: string[], heading: string): number {
+  let inHtmlComment = false;
+  let fence: { character: string; length: number } | undefined;
+
+  for (const [index, line] of lines.entries()) {
+    const visibleLine = stripHtmlComments(line, (value) => {
+      inHtmlComment = value;
+    }, inHtmlComment);
+    const fenceMatch = visibleLine.trimStart().match(/^(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1] ?? '';
+      if (!fence) {
+        fence = { character: marker[0] ?? '', length: marker.length };
+      } else if (marker[0] === fence.character && marker.length >= fence.length) {
+        fence = undefined;
+      }
+      continue;
+    }
+    if (!fence && normalizeHeading(visibleLine) === heading.toLowerCase()) return index;
+  }
+  return -1;
+}
+
+function stripHtmlComments(line: string, setCommentState: (value: boolean) => void, initialState: boolean): string {
+  let inComment = initialState;
+  let remaining = line;
+  let visible = '';
+
+  while (remaining) {
+    if (inComment) {
+      const end = remaining.indexOf('-->');
+      if (end === -1) break;
+      inComment = false;
+      remaining = remaining.slice(end + 3);
+      continue;
+    }
+
+    const start = remaining.indexOf('<!--');
+    if (start === -1) {
+      visible += remaining;
+      break;
+    }
+    visible += remaining.slice(0, start);
+    inComment = true;
+    remaining = remaining.slice(start + 4);
+  }
+
+  setCommentState(inComment);
+  return visible;
 }
 
 function populateAgentContext(body: string, humanDriver?: string): string {
