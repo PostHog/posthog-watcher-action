@@ -15,6 +15,7 @@ export interface QueueItem {
   number: number;
   mode: QueuedMode;
   command?: WatcherCommand;
+  actor?: string;
   applyClose?: boolean;
   extraInstructions?: string;
   commandMention?: string;
@@ -87,6 +88,7 @@ function buildQueueItem(inputs: ActionInputs, command: CommandResolution): Queue
     number,
     mode,
     command: command.command,
+    actor: command.actor,
     applyClose: command.applyClose,
     extraInstructions: command.extraInstructions,
     commandMention: command.commandMention,

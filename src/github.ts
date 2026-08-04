@@ -180,6 +180,12 @@ export async function createDraftPullRequest(octokit: Octokit, params: {
   return { number: created.data.number, url: created.data.html_url };
 }
 
+export async function ensurePullRequestAssignee(octokit: Octokit, pullNumber: number, assignee?: string): Promise<void> {
+  if (!assignee) return;
+  const { owner, repo } = github.context.repo;
+  await octokit.rest.issues.addAssignees({ owner, repo, issue_number: pullNumber, assignees: [assignee] });
+}
+
 export async function getPullRequestSnapshot(octokit: Octokit, pullNumber: number): Promise<PullRequestSnapshot> {
   const { owner, repo } = github.context.repo;
   const response = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });

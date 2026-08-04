@@ -1064,14 +1064,14 @@ var require_util = __commonJS({
         }
         const port = url.port != null ? url.port : url.protocol === "https:" ? 443 : 80;
         let origin = url.origin != null ? url.origin : `${url.protocol || ""}//${url.hostname || ""}:${port}`;
-        let path4 = url.path != null ? url.path : `${url.pathname || ""}${url.search || ""}`;
+        let path5 = url.path != null ? url.path : `${url.pathname || ""}${url.search || ""}`;
         if (origin[origin.length - 1] === "/") {
           origin = origin.slice(0, origin.length - 1);
         }
-        if (path4 && path4[0] !== "/") {
-          path4 = `/${path4}`;
+        if (path5 && path5[0] !== "/") {
+          path5 = `/${path5}`;
         }
-        return new URL(`${origin}${path4}`);
+        return new URL(`${origin}${path5}`);
       }
       if (!isHttpOrHttpsPrefixed(url.origin || url.protocol)) {
         throw new InvalidArgumentError("Invalid URL protocol: the URL must start with `http:` or `https:`.");
@@ -1522,39 +1522,39 @@ var require_diagnostics = __commonJS({
       });
       diagnosticsChannel.channel("undici:client:sendHeaders").subscribe((evt) => {
         const {
-          request: { method, path: path4, origin }
+          request: { method, path: path5, origin }
         } = evt;
-        debuglog("sending request to %s %s/%s", method, origin, path4);
+        debuglog("sending request to %s %s/%s", method, origin, path5);
       });
       diagnosticsChannel.channel("undici:request:headers").subscribe((evt) => {
         const {
-          request: { method, path: path4, origin },
+          request: { method, path: path5, origin },
           response: { statusCode }
         } = evt;
         debuglog(
           "received response to %s %s/%s - HTTP %d",
           method,
           origin,
-          path4,
+          path5,
           statusCode
         );
       });
       diagnosticsChannel.channel("undici:request:trailers").subscribe((evt) => {
         const {
-          request: { method, path: path4, origin }
+          request: { method, path: path5, origin }
         } = evt;
-        debuglog("trailers received from %s %s/%s", method, origin, path4);
+        debuglog("trailers received from %s %s/%s", method, origin, path5);
       });
       diagnosticsChannel.channel("undici:request:error").subscribe((evt) => {
         const {
-          request: { method, path: path4, origin },
+          request: { method, path: path5, origin },
           error: error2
         } = evt;
         debuglog(
           "request to %s %s/%s errored - %s",
           method,
           origin,
-          path4,
+          path5,
           error2.message
         );
       });
@@ -1603,9 +1603,9 @@ var require_diagnostics = __commonJS({
         });
         diagnosticsChannel.channel("undici:client:sendHeaders").subscribe((evt) => {
           const {
-            request: { method, path: path4, origin }
+            request: { method, path: path5, origin }
           } = evt;
-          debuglog("sending request to %s %s/%s", method, origin, path4);
+          debuglog("sending request to %s %s/%s", method, origin, path5);
         });
       }
       diagnosticsChannel.channel("undici:websocket:open").subscribe((evt) => {
@@ -1668,7 +1668,7 @@ var require_request = __commonJS({
     var kHandler = /* @__PURE__ */ Symbol("handler");
     var Request = class {
       constructor(origin, {
-        path: path4,
+        path: path5,
         method,
         body,
         headers,
@@ -1683,11 +1683,11 @@ var require_request = __commonJS({
         expectContinue,
         servername
       }, handler2) {
-        if (typeof path4 !== "string") {
+        if (typeof path5 !== "string") {
           throw new InvalidArgumentError("path must be a string");
-        } else if (path4[0] !== "/" && !(path4.startsWith("http://") || path4.startsWith("https://")) && method !== "CONNECT") {
+        } else if (path5[0] !== "/" && !(path5.startsWith("http://") || path5.startsWith("https://")) && method !== "CONNECT") {
           throw new InvalidArgumentError("path must be an absolute URL or start with a slash");
-        } else if (invalidPathRegex.test(path4)) {
+        } else if (invalidPathRegex.test(path5)) {
           throw new InvalidArgumentError("invalid request path");
         }
         if (typeof method !== "string") {
@@ -1753,7 +1753,7 @@ var require_request = __commonJS({
         this.completed = false;
         this.aborted = false;
         this.upgrade = upgrade || null;
-        this.path = query ? buildURL(path4, query) : path4;
+        this.path = query ? buildURL(path5, query) : path5;
         this.origin = origin;
         this.idempotent = idempotent == null ? method === "HEAD" || method === "GET" : idempotent;
         this.blocking = blocking == null ? false : blocking;
@@ -6375,7 +6375,7 @@ var require_client_h1 = __commonJS({
       return method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && method !== "TRACE" && method !== "CONNECT";
     }
     function writeH1(client, request2) {
-      const { method, path: path4, host, upgrade, blocking, reset } = request2;
+      const { method, path: path5, host, upgrade, blocking, reset } = request2;
       let { body, headers, contentLength } = request2;
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH" || method === "QUERY" || method === "PROPFIND" || method === "PROPPATCH";
       if (util.isFormDataLike(body)) {
@@ -6442,7 +6442,7 @@ var require_client_h1 = __commonJS({
       if (blocking) {
         socket[kBlocking] = true;
       }
-      let header = `${method} ${path4} HTTP/1.1\r
+      let header = `${method} ${path5} HTTP/1.1\r
 `;
       if (typeof host === "string") {
         header += `host: ${host}\r
@@ -6968,7 +6968,7 @@ var require_client_h2 = __commonJS({
     }
     function writeH2(client, request2) {
       const session = client[kHTTP2Session];
-      const { method, path: path4, host, upgrade, expectContinue, signal, headers: reqHeaders } = request2;
+      const { method, path: path5, host, upgrade, expectContinue, signal, headers: reqHeaders } = request2;
       let { body } = request2;
       if (upgrade) {
         util.errorRequest(client, request2, new Error("Upgrade not supported for H2"));
@@ -7035,7 +7035,7 @@ var require_client_h2 = __commonJS({
         });
         return true;
       }
-      headers[HTTP2_HEADER_PATH] = path4;
+      headers[HTTP2_HEADER_PATH] = path5;
       headers[HTTP2_HEADER_SCHEME] = "https";
       const expectsPayload = method === "PUT" || method === "POST" || method === "PATCH";
       if (body && typeof body.read === "function") {
@@ -7388,9 +7388,9 @@ var require_redirect_handler = __commonJS({
           return this.handler.onHeaders(statusCode, headers, resume, statusText);
         }
         const { origin, pathname, search } = util.parseURL(new URL(this.location, this.opts.origin && new URL(this.opts.path, this.opts.origin)));
-        const path4 = search ? `${pathname}${search}` : pathname;
+        const path5 = search ? `${pathname}${search}` : pathname;
         this.opts.headers = cleanRequestHeaders(this.opts.headers, statusCode === 303, this.opts.origin !== origin);
-        this.opts.path = path4;
+        this.opts.path = path5;
         this.opts.origin = origin;
         this.opts.maxRedirections = 0;
         this.opts.query = null;
@@ -8625,10 +8625,10 @@ var require_proxy_agent = __commonJS({
         };
         const {
           origin,
-          path: path4 = "/",
+          path: path5 = "/",
           headers = {}
         } = opts;
-        opts.path = origin + path4;
+        opts.path = origin + path5;
         if (!("host" in headers) && !("Host" in headers)) {
           const { host } = new URL2(origin);
           headers.host = host;
@@ -10549,20 +10549,20 @@ var require_mock_utils = __commonJS({
       }
       return true;
     }
-    function safeUrl(path4) {
-      if (typeof path4 !== "string") {
-        return path4;
+    function safeUrl(path5) {
+      if (typeof path5 !== "string") {
+        return path5;
       }
-      const pathSegments = path4.split("?");
+      const pathSegments = path5.split("?");
       if (pathSegments.length !== 2) {
-        return path4;
+        return path5;
       }
       const qp = new URLSearchParams(pathSegments.pop());
       qp.sort();
       return [...pathSegments, qp.toString()].join("?");
     }
-    function matchKey(mockDispatch2, { path: path4, method, body, headers }) {
-      const pathMatch = matchValue(mockDispatch2.path, path4);
+    function matchKey(mockDispatch2, { path: path5, method, body, headers }) {
+      const pathMatch = matchValue(mockDispatch2.path, path5);
       const methodMatch = matchValue(mockDispatch2.method, method);
       const bodyMatch = typeof mockDispatch2.body !== "undefined" ? matchValue(mockDispatch2.body, body) : true;
       const headersMatch = matchHeaders(mockDispatch2, headers);
@@ -10584,7 +10584,7 @@ var require_mock_utils = __commonJS({
     function getMockDispatch(mockDispatches, key) {
       const basePath = key.query ? buildURL(key.path, key.query) : key.path;
       const resolvedPath = typeof basePath === "string" ? safeUrl(basePath) : basePath;
-      let matchedMockDispatches = mockDispatches.filter(({ consumed }) => !consumed).filter(({ path: path4 }) => matchValue(safeUrl(path4), resolvedPath));
+      let matchedMockDispatches = mockDispatches.filter(({ consumed }) => !consumed).filter(({ path: path5 }) => matchValue(safeUrl(path5), resolvedPath));
       if (matchedMockDispatches.length === 0) {
         throw new MockNotMatchedError(`Mock dispatch not matched for path '${resolvedPath}'`);
       }
@@ -10622,9 +10622,9 @@ var require_mock_utils = __commonJS({
       }
     }
     function buildKey(opts) {
-      const { path: path4, method, body, headers, query } = opts;
+      const { path: path5, method, body, headers, query } = opts;
       return {
-        path: path4,
+        path: path5,
         method,
         body,
         headers,
@@ -11087,10 +11087,10 @@ var require_pending_interceptors_formatter = __commonJS({
       }
       format(pendingInterceptors) {
         const withPrettyHeaders = pendingInterceptors.map(
-          ({ method, path: path4, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
+          ({ method, path: path5, data: { statusCode }, persist, times, timesInvoked, origin }) => ({
             Method: method,
             Origin: origin,
-            Path: path4,
+            Path: path5,
             "Status code": statusCode,
             Persistent: persist ? PERSISTENT : NOT_PERSISTENT,
             Invocations: timesInvoked,
@@ -15971,9 +15971,9 @@ var require_util6 = __commonJS({
         }
       }
     }
-    function validateCookiePath(path4) {
-      for (let i = 0; i < path4.length; ++i) {
-        const code = path4.charCodeAt(i);
+    function validateCookiePath(path5) {
+      for (let i = 0; i < path5.length; ++i) {
+        const code = path5.charCodeAt(i);
         if (code < 32 || // exclude CTLs (0-31)
         code === 127 || // DEL
         code === 59) {
@@ -18666,11 +18666,11 @@ var require_undici = __commonJS({
           if (typeof opts.path !== "string") {
             throw new InvalidArgumentError("invalid opts.path");
           }
-          let path4 = opts.path;
+          let path5 = opts.path;
           if (!opts.path.startsWith("/")) {
-            path4 = `/${path4}`;
+            path5 = `/${path5}`;
           }
-          url = new URL(util.parseOrigin(url).origin + path4);
+          url = new URL(util.parseOrigin(url).origin + path5);
         } else {
           if (!opts) {
             opts = typeof url === "object" ? url : {};
@@ -20160,8 +20160,8 @@ var Context = class {
       if ((0, import_fs2.existsSync)(process.env.GITHUB_EVENT_PATH)) {
         this.payload = JSON.parse((0, import_fs2.readFileSync)(process.env.GITHUB_EVENT_PATH, { encoding: "utf8" }));
       } else {
-        const path4 = process.env.GITHUB_EVENT_PATH;
-        process.stdout.write(`GITHUB_EVENT_PATH ${path4} does not exist${import_os3.EOL}`);
+        const path5 = process.env.GITHUB_EVENT_PATH;
+        process.stdout.write(`GITHUB_EVENT_PATH ${path5} does not exist${import_os3.EOL}`);
       }
     }
     this.eventName = process.env.GITHUB_EVENT_NAME;
@@ -24017,6 +24017,11 @@ async function createDraftPullRequest(octokit, params) {
   });
   return { number: created.data.number, url: created.data.html_url };
 }
+async function ensurePullRequestAssignee(octokit, pullNumber, assignee) {
+  if (!assignee) return;
+  const { owner, repo } = context2.repo;
+  await octokit.rest.issues.addAssignees({ owner, repo, issue_number: pullNumber, assignees: [assignee] });
+}
 async function getPullRequestSnapshot(octokit, pullNumber) {
   const { owner, repo } = context2.repo;
   const response = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
@@ -25200,7 +25205,47 @@ function titleTokens(title) {
 }
 
 // src/fix-runner.ts
-var import_promises3 = require("node:fs/promises");
+var import_promises4 = require("node:fs/promises");
+
+// src/affected-packages.ts
+var import_promises2 = require("node:fs/promises");
+var import_node_path3 = __toESM(require("node:path"));
+async function readAffectedPackageNames(files, cwd = process.cwd()) {
+  const names = /* @__PURE__ */ new Set();
+  for (const file of files) {
+    if (file.startsWith(".changeset/")) continue;
+    let directory = import_node_path3.default.dirname(file);
+    while (true) {
+      try {
+        const manifest = JSON.parse(await (0, import_promises2.readFile)(import_node_path3.default.join(cwd, directory, "package.json"), "utf8"));
+        if (typeof manifest.name === "string" && manifest.name.trim()) names.add(manifest.name.trim());
+        break;
+      } catch (error2) {
+        if (!isNotFoundError(error2)) break;
+        const parent = import_node_path3.default.dirname(directory);
+        if (parent === directory) break;
+        directory = parent;
+      }
+    }
+  }
+  return [...names];
+}
+async function filterExistingFiles(files, cwd = process.cwd()) {
+  const existing = await Promise.all(
+    files.map(async (file) => {
+      try {
+        await (0, import_promises2.access)(import_node_path3.default.join(cwd, file));
+        return file;
+      } catch {
+        return void 0;
+      }
+    })
+  );
+  return existing.filter((file) => Boolean(file));
+}
+function isNotFoundError(error2) {
+  return typeof error2 === "object" && error2 !== null && "code" in error2 && error2.code === "ENOENT";
+}
 
 // src/posthog-code-client.ts
 var TERMINAL_RUN_STATUSES = /* @__PURE__ */ new Set(["completed", "failed", "cancelled"]);
@@ -25246,8 +25291,8 @@ var PostHogCodeClient = class {
   get baseUrl() {
     return `${this.host.replace(/\/+$/, "")}/api/projects/${this.projectId}`;
   }
-  async request(method, path4, body) {
-    const response = await fetch(`${this.baseUrl}${path4}`, {
+  async request(method, path5, body) {
+    const response = await fetch(`${this.baseUrl}${path5}`, {
       method,
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -25258,7 +25303,7 @@ var PostHogCodeClient = class {
     });
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(`PostHog Code ${method} ${path4} failed (${response.status}): ${text.slice(0, 500)}`);
+      throw new Error(`PostHog Code ${method} ${path5} failed (${response.status}): ${text.slice(0, 500)}`);
     }
     return text ? JSON.parse(text) : void 0;
   }
@@ -25290,6 +25335,133 @@ function findPullRequestUrl(...values) {
 function parsePullRequestNumber(url) {
   const match = url.match(/\/pull\/(\d+)$/);
   return match ? Number(match[1]) : void 0;
+}
+
+// src/pull-request-body.ts
+var TEMPLATE_MARKERS = {
+  problem: "<!-- posthog-watcher:problem -->",
+  changes: "<!-- posthog-watcher:changes -->",
+  validation: "<!-- posthog-watcher:validation -->",
+  agentContext: "<!-- posthog-watcher:agent-context -->"
+};
+function buildPullRequestBody({ issue: issue2, triage, files, validationCommand, template, humanDriver, affectedPackages = [], existingFiles = [] }) {
+  const problem = `Fixes #${issue2.number}
+
+${triage.summary}`;
+  const validation = validationCommand ? `- \`${validationCommand}\` (passed)` : "- No validation command configured.";
+  const hasValidationSlot = Boolean(template?.includes(TEMPLATE_MARKERS.validation) || templateHasHeading(template, "Validation"));
+  const changes = `${triage.fix.reason}
+
+### Changed files
+
+${formatFiles(files)}${hasValidationSlot ? "" : `
+
+### Validation
+
+${validation}`}`;
+  const agentContext = formatAgentContext(humanDriver);
+  const watcherBody = `${problem}
+
+Generated by posthog-watcher-action using pi.
+
+## Summary
+
+${triage.summary}
+
+## Triage rationale
+
+${triage.fix.reason}
+
+## Changed files
+
+${formatFiles(files)}
+
+## Validation
+
+${validation}
+`;
+  if (!template?.trim()) return watcherBody;
+  let body = template.trimEnd();
+  let problemPlaced = replaceMarker(body, TEMPLATE_MARKERS.problem, problem);
+  body = problemPlaced.body;
+  let changesPlaced = replaceMarker(body, TEMPLATE_MARKERS.changes, changes);
+  body = changesPlaced.body;
+  if (!problemPlaced.replaced) {
+    problemPlaced = insertUnderHeading(body, "Problem", problem);
+    body = problemPlaced.body;
+  }
+  if (!changesPlaced.replaced) {
+    changesPlaced = insertUnderHeading(body, "Changes", changes);
+    body = changesPlaced.body;
+  }
+  const validationMarker = replaceMarker(body, TEMPLATE_MARKERS.validation, validation);
+  body = validationMarker.body;
+  if (!validationMarker.replaced) body = insertUnderHeading(body, "Validation", validation).body;
+  const agentMarker = replaceMarker(body, TEMPLATE_MARKERS.agentContext, agentContext);
+  body = agentMarker.body;
+  if (!agentMarker.replaced) body = populateAgentContext(body, humanDriver);
+  body = markVerifiedChecklistItems(body, existingFiles, affectedPackages);
+  if (problemPlaced.replaced && changesPlaced.replaced) return `${body}
+`;
+  return `${body}
+
+---
+
+${watcherBody}`;
+}
+function formatFiles(files) {
+  return files.map((file) => `- \`${file}\``).join("\n");
+}
+function formatAgentContext(humanDriver) {
+  const autonomy = humanDriver ? "Human-driven (agent-assisted)" : "Fully autonomous";
+  const attribution = humanDriver ? ` The work was directed by @${humanDriver}, who is assigned as the DRI.` : "";
+  return `**Autonomy:** ${autonomy}
+
+Generated by posthog-watcher-action using pi.${attribution}`;
+}
+function replaceMarker(body, marker, content) {
+  if (!body.includes(marker)) return { body, replaced: false };
+  return { body: body.replace(marker, content), replaced: true };
+}
+function insertUnderHeading(body, heading, content) {
+  const lines = body.split("\n");
+  const headingIndex = lines.findIndex((line) => normalizeHeading(line) === heading.toLowerCase());
+  if (headingIndex === -1) return { body, replaced: false };
+  lines.splice(headingIndex + 1, 0, "", content);
+  return { body: lines.join("\n"), replaced: true };
+}
+function normalizeHeading(line) {
+  const match = line.match(/^#{1,6}\s+(.+)$/);
+  if (!match) return "";
+  return (match[1] ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim().toLowerCase();
+}
+function templateHasHeading(template, heading) {
+  return Boolean(template?.split("\n").some((line) => normalizeHeading(line) === heading.toLowerCase()));
+}
+function populateAgentContext(body, humanDriver) {
+  const autonomy = humanDriver ? "Human-driven (agent-assisted)" : "Fully autonomous";
+  const attribution = humanDriver ? ` The work was directed by @${humanDriver}, who is assigned as the DRI.` : "";
+  const autonomyLine = /^\*\*Autonomy:\*\*.*$/m;
+  if (autonomyLine.test(body)) {
+    return body.replace(autonomyLine, `**Autonomy:** ${autonomy}
+
+Generated by posthog-watcher-action using pi.${attribution}`);
+  }
+  const inserted = insertUnderHeading(body, "Agent context", formatAgentContext(humanDriver));
+  return inserted.body;
+}
+function markVerifiedChecklistItems(body, existingFiles, affectedPackages) {
+  const hasTests = existingFiles.some((file) => /(^|\/)(tests?|__tests__)(\/|$)|\.(test|spec)\.[^/]+$/i.test(file));
+  const packageNames = new Set(affectedPackages.map((name) => name.toLowerCase()));
+  return body.split("\n").map((line) => {
+    const match = line.match(/^(\s*)- \[ \] (.+)$/);
+    if (!match) return line;
+    const indentation = match[1] ?? "";
+    const label = (match[2] ?? "").trim();
+    const normalizedLabel = label.replace(/\s+\([^)]*\)\s*$/, "").toLowerCase();
+    const verified = hasTests && normalizedLabel === "tests for new code" || packageNames.has(normalizedLabel);
+    return verified ? `${indentation}- [x] ${label}` : line;
+  }).join("\n");
 }
 
 // src/posthog-code-fix-runner.ts
@@ -25845,8 +26017,8 @@ async function runValidation(inputs, env) {
 }
 
 // src/signed-commit.ts
-var import_promises2 = require("node:fs/promises");
-var import_node_path3 = __toESM(require("node:path"));
+var import_promises3 = require("node:fs/promises");
+var import_node_path4 = __toESM(require("node:path"));
 async function commitChangesWithGitHubSignature(octokit, options) {
   const cwd = options.cwd ?? process.cwd();
   const changes = await collectWorkingTreeChanges(cwd);
@@ -25895,7 +26067,7 @@ async function collectWorkingTreeChanges(cwd) {
   for (const entry of entries) {
     if (entry.deletePath) deletions.push({ path: entry.deletePath });
     if (entry.addPath) {
-      const contents = await (0, import_promises2.readFile)(import_node_path3.default.join(cwd, entry.addPath));
+      const contents = await (0, import_promises3.readFile)(import_node_path4.default.join(cwd, entry.addPath));
       additions.push({ path: entry.addPath, contents: contents.toString("base64") });
     }
   }
@@ -25925,7 +26097,7 @@ function parseNameStatus(output) {
 }
 
 // src/fix-runner.ts
-async function maybeCreateFixPr(octokit, issue2, triage, inputs, trustedInstructions = "") {
+async function maybeCreateFixPr(octokit, issue2, triage, inputs, trustedInstructions = "", humanDriver) {
   if (!shouldAttemptFix(triage, inputs)) return void 0;
   if (inputs.fixExecutor === "posthog-code") {
     if (inputs.dryRun) {
@@ -25963,6 +26135,8 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs, trustedInstruct
     if (!repair) {
       return void 0;
     }
+    const affectedPackages = await readAffectedPackageNames(repair.files);
+    const existingFiles = await filterExistingFiles(repair.files);
     const commit = await commitChangesWithGitHubSignature(octokit, {
       branch,
       message: `Fix #${issue2.number}: ${issue2.title.slice(0, 80)}`,
@@ -25979,8 +26153,18 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs, trustedInstruct
       title: `fix: ${issue2.title}`,
       head: branch,
       base,
-      body: buildPullRequestBody(issue2, triage, repair.files, inputs.validationCommand, pullRequestTemplate)
+      body: buildPullRequestBody({
+        issue: issue2,
+        triage,
+        files: repair.files,
+        validationCommand: inputs.validationCommand,
+        template: pullRequestTemplate,
+        humanDriver,
+        affectedPackages,
+        existingFiles
+      })
     });
+    await ensurePullRequestAssignee(octokit, pr.number, humanDriver);
     await ensureTeamReviewRequested(octokit, pr.number, inputs.fixPrReviewTeam);
     info(`Created draft PR: ${pr.url}`);
     return pr.url;
@@ -26013,41 +26197,14 @@ function shouldAttemptFix(triage, inputs) {
 }
 async function readPullRequestTemplate() {
   try {
-    return await (0, import_promises3.readFile)(".github/pull_request_template.md", "utf8");
+    return await (0, import_promises4.readFile)(".github/pull_request_template.md", "utf8");
   } catch (error2) {
-    if (isNotFoundError(error2)) return void 0;
+    if (isNotFoundError2(error2)) return void 0;
     throw error2;
   }
 }
-function isNotFoundError(error2) {
+function isNotFoundError2(error2) {
   return typeof error2 === "object" && error2 !== null && "code" in error2 && error2.code === "ENOENT";
-}
-function buildPullRequestBody(issue2, triage, files, validationCommand, template) {
-  const watcherBody = `Fixes #${issue2.number}
-
-Generated by posthog-watcher-action using pi.
-
-## Summary
-
-${triage.summary}
-
-## Triage rationale
-
-${triage.fix.reason}
-
-## Changed files
-
-${files.map((file) => `- \`${file}\``).join("\n")}
-
-## Validation
-
-${validationCommand ? `- \`${validationCommand}\`` : "- No validation command configured."}
-`;
-  return template ? `${template.trimEnd()}
-
----
-
-${watcherBody}` : watcherBody;
 }
 
 // src/inputs.ts
@@ -26343,13 +26500,13 @@ function parsePrReview(text, maxFindings) {
 function normalizeFinding(value) {
   if (!value || typeof value !== "object") return void 0;
   const entry = value;
-  const path4 = typeof entry.path === "string" ? entry.path.trim() : "";
+  const path5 = typeof entry.path === "string" ? entry.path.trim() : "";
   const line = coerceLine(entry.line);
   const comment = typeof entry.comment === "string" ? entry.comment.trim() : "";
-  if (!path4 || line === void 0 || !comment) return void 0;
+  if (!path5 || line === void 0 || !comment) return void 0;
   const suggestion = typeof entry.suggestion === "string" && entry.suggestion.trim() ? entry.suggestion.trim() : void 0;
   return {
-    path: path4,
+    path: path5,
     line,
     severity: enumValue(entry.severity, SEVERITIES, "info"),
     title: typeof entry.title === "string" ? entry.title.trim() : "",
@@ -26371,27 +26528,27 @@ async function readRepoMemory(octokit, inputs, owner, repo) {
   if (!inputs.stateEnabled || inputs.dryRun) return "";
   const state = stateRepository2(inputs);
   await ensureBranch2(octokit, state.owner, state.repo, inputs.stateBranch);
-  return truncateMemory(await readFile4(octokit, state.owner, state.repo, inputs.stateBranch, memoryPath(owner, repo)) ?? "");
+  return truncateMemory(await readFile5(octokit, state.owner, state.repo, inputs.stateBranch, memoryPath(owner, repo)) ?? "");
 }
 async function appendRepoMemory(octokit, inputs, record) {
   if (!inputs.stateEnabled || inputs.dryRun) return;
   const { owner, repo } = stateRepository2(inputs);
   await ensureBranch2(octokit, owner, repo, inputs.stateBranch);
-  const path4 = memoryPath(record.owner, record.repo);
-  const current = await readFile4(octokit, owner, repo, inputs.stateBranch, path4);
+  const path5 = memoryPath(record.owner, record.repo);
+  const current = await readFile5(octokit, owner, repo, inputs.stateBranch, path5);
   const next = truncateMemory(`${current?.trimEnd() || renderMemoryHeader(record)}
 
 ${renderMemoryEntry(record, inputs)}`);
-  await upsertFile2(octokit, owner, repo, inputs.stateBranch, path4, `${next}
+  await upsertFile2(octokit, owner, repo, inputs.stateBranch, path5, `${next}
 `, `Update watcher memory for ${record.owner}/${record.repo}`);
 }
 async function writeStateRecord(octokit, inputs, record) {
   if (!inputs.stateEnabled || inputs.dryRun) return;
   const { owner, repo } = stateRepository2(inputs);
   await ensureBranch2(octokit, owner, repo, inputs.stateBranch);
-  const path4 = `records/${record.owner}-${record.repo}/${record.kind}s/${record.numberOrSha}.md`;
+  const path5 = `records/${record.owner}-${record.repo}/${record.kind}s/${record.numberOrSha}.md`;
   const body = renderRecord(record, inputs);
-  await upsertFile2(octokit, owner, repo, inputs.stateBranch, path4, body, `Update watcher state for ${record.kind} ${record.numberOrSha}`);
+  await upsertFile2(octokit, owner, repo, inputs.stateBranch, path5, body, `Update watcher state for ${record.kind} ${record.numberOrSha}`);
   const index = await readIndex(octokit, owner, repo, inputs.stateBranch);
   const entry = toDashboardEntry(record);
   index[entry.key] = entry;
@@ -26457,7 +26614,7 @@ async function ensureBranch2(octokit, owner, repo, branch) {
   }
 }
 async function readIndex(octokit, owner, repo, branch) {
-  const content = await readFile4(octokit, owner, repo, branch, "index.json");
+  const content = await readFile5(octokit, owner, repo, branch, "index.json");
   if (!content) return {};
   try {
     return JSON.parse(content);
@@ -26465,9 +26622,9 @@ async function readIndex(octokit, owner, repo, branch) {
     return {};
   }
 }
-async function readFile4(octokit, owner, repo, branch, path4) {
+async function readFile5(octokit, owner, repo, branch, path5) {
   try {
-    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path4, ref: branch });
+    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path5, ref: branch });
     if (!Array.isArray(existing.data) && existing.data.type === "file" && "content" in existing.data) {
       return Buffer.from(existing.data.content, "base64").toString("utf8");
     }
@@ -26476,20 +26633,20 @@ async function readFile4(octokit, owner, repo, branch, path4) {
   }
   return void 0;
 }
-async function upsertFile2(octokit, owner, repo, branch, path4, content, message) {
+async function upsertFile2(octokit, owner, repo, branch, path5, content, message) {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     let sha;
     try {
-      const existing = await octokit.rest.repos.getContent({ owner, repo, path: path4, ref: branch });
+      const existing = await octokit.rest.repos.getContent({ owner, repo, path: path5, ref: branch });
       if (!Array.isArray(existing.data) && existing.data.type === "file") sha = existing.data.sha;
     } catch (error2) {
-      debug(`State file ${path4} does not exist yet or branch is missing: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      debug(`State file ${path5} does not exist yet or branch is missing: ${error2 instanceof Error ? error2.message : String(error2)}`);
     }
     try {
       await octokit.rest.repos.createOrUpdateFileContents({
         owner,
         repo,
-        path: path4,
+        path: path5,
         branch,
         message,
         content: Buffer.from(content).toString("base64"),
@@ -26837,7 +26994,7 @@ async function enqueueCurrentPayload(octokit, inputs, command) {
 async function readQueue(octokit, inputs) {
   const { owner, repo } = stateRepository3(inputs);
   await ensureBranch3(octokit, owner, repo, inputs.stateBranch);
-  return parseQueue(await readFile5(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH));
+  return parseQueue(await readFile6(octokit, owner, repo, inputs.stateBranch, QUEUE_PATH));
 }
 async function incrementQueueAttempt(octokit, inputs, id) {
   return mutateQueue(octokit, inputs, (queue) => {
@@ -26868,6 +27025,7 @@ function buildQueueItem(inputs, command) {
     number,
     mode,
     command: command.command,
+    actor: command.actor,
     applyClose: command.applyClose,
     extraInstructions: command.extraInstructions,
     commandMention: command.commandMention,
@@ -26962,12 +27120,12 @@ async function ensureBranch3(octokit, owner, repo, branch) {
     });
   }
 }
-async function readFile5(octokit, owner, repo, branch, path4) {
-  return (await readFileWithSha(octokit, owner, repo, branch, path4))?.content;
+async function readFile6(octokit, owner, repo, branch, path5) {
+  return (await readFileWithSha(octokit, owner, repo, branch, path5))?.content;
 }
-async function readFileWithSha(octokit, owner, repo, branch, path4) {
+async function readFileWithSha(octokit, owner, repo, branch, path5) {
   try {
-    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path4, ref: branch });
+    const existing = await octokit.rest.repos.getContent({ owner, repo, path: path5, ref: branch });
     if (!Array.isArray(existing.data) && existing.data.type === "file" && "content" in existing.data) {
       return { content: Buffer.from(existing.data.content, "base64").toString("utf8"), sha: existing.data.sha };
     }
@@ -26976,11 +27134,11 @@ async function readFileWithSha(octokit, owner, repo, branch, path4) {
   }
   return void 0;
 }
-async function upsertFile3(octokit, owner, repo, branch, path4, content, message, sha) {
+async function upsertFile3(octokit, owner, repo, branch, path5, content, message, sha) {
   await octokit.rest.repos.createOrUpdateFileContents({
     owner,
     repo,
-    path: path4,
+    path: path5,
     branch,
     message,
     content: Buffer.from(content).toString("base64"),
@@ -27388,7 +27546,15 @@ async function drainQueue(octokit, inputs) {
 }
 async function processQueueItem(octokit, item, inputs) {
   const itemInputs = { ...inputs, mode: item.mode, commandMention: item.commandMention ?? inputs.commandMention };
-  const itemCommand = { shouldRun: true, mode: item.mode, command: item.command, applyClose: item.applyClose, extraInstructions: item.extraInstructions, commandMention: item.commandMention };
+  const itemCommand = {
+    shouldRun: true,
+    mode: item.mode,
+    command: item.command,
+    actor: item.actor,
+    applyClose: item.applyClose,
+    extraInstructions: item.extraInstructions,
+    commandMention: item.commandMention
+  };
   info(`Draining queued ${item.kind} #${item.number} in ${item.mode} mode${item.command ? ` from ${item.command} command` : ""}.`);
   if (item.kind === "pull_request") {
     if (item.command === "pr-review-reply") {
@@ -27561,7 +27727,8 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
   if (!security.sensitive && !fixBlocker && shouldReportFixAttempt(triage, inputs)) {
     await updateIssueStatus(octokit, inputs, issue2, "Attempting fix PR", "Running the guarded repair loop, validation, diff guardrails, and independent review gate.", sweepAttentionMention(inputs, issue2.owner));
   }
-  const prUrl = security.sensitive || fixBlocker ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs, command.extraInstructions);
+  const humanDriver = command.command && FIX_INTENT_COMMANDS.has(command.command) && command.actor && command.actor !== "unknown" ? command.actor : void 0;
+  const prUrl = security.sensitive || fixBlocker ? void 0 : await maybeCreateFixPr(octokit, issue2, triage, inputs, command.extraInstructions, humanDriver);
   let closed = false;
   if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, duplicate.duplicate, duplicate.score, security.sensitive)) {
     if (inputs.dryRun) {
