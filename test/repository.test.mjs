@@ -250,6 +250,8 @@ test('dedicated queue modes are wired without requiring OpenAI for enqueue', () 
   assert.match(queue, /queue\.json/);
   assert.match(queue, /samePendingItem/);
   assert.match(queue, /commentId: payload\.comment\?\.id/);
+  assert.match(queue, /actor: command\.actor/);
+  assert.match(index, /actor: item\.actor/);
   assert.match(queue, /extraInstructions: command\.extraInstructions/);
   assert.match(queue, /commandMention: command\.commandMention/);
   assert.match(queue, /commandSourceKey/);
@@ -428,13 +430,19 @@ test('feature requests require explicit fix intent before draft PRs by default',
   assert.match(readme, /`block-feature-fixes`/);
 });
 
-test('fix PRs use host pull request template when present', () => {
+test('fix PRs fill the host pull request template when present', () => {
   const fixRunner = read('src/fix-runner.ts');
+  const pullRequestBody = read('src/pull-request-body.ts');
+  const github = read('src/github.ts');
+  const index = read('src/index.ts');
   const readme = read('README.md');
   assert.match(fixRunner, /\.github\/pull_request_template\.md/);
   assert.match(fixRunner, /readPullRequestTemplate/);
-  assert.match(fixRunner, /template\.trimEnd\(\)/);
-  assert.match(readme, /Uses `\.github\/pull_request_template\.md`/);
+  assert.match(pullRequestBody, /insertUnderHeading/);
+  assert.match(pullRequestBody, /posthog-watcher:problem/);
+  assert.match(index, /FIX_INTENT_COMMANDS\.has\(command\.command\).*command\.actor/);
+  assert.match(github, /ensurePullRequestAssignee/);
+  assert.match(readme, /Fills `\.github\/pull_request_template\.md`/);
 });
 
 test('fix and PR repair commits are GitHub-signed', () => {

@@ -181,7 +181,15 @@ async function drainQueue(octokit: Octokit, inputs: ActionInputs): Promise<void>
 
 async function processQueueItem(octokit: Octokit, item: QueueItem, inputs: ActionInputs): Promise<void> {
   const itemInputs = { ...inputs, mode: item.mode, commandMention: item.commandMention ?? inputs.commandMention };
-  const itemCommand: CommandResolution = { shouldRun: true, mode: item.mode, command: item.command, applyClose: item.applyClose, extraInstructions: item.extraInstructions, commandMention: item.commandMention };
+  const itemCommand: CommandResolution = {
+    shouldRun: true,
+    mode: item.mode,
+    command: item.command,
+    actor: item.actor,
+    applyClose: item.applyClose,
+    extraInstructions: item.extraInstructions,
+    commandMention: item.commandMention,
+  };
   core.info(`Draining queued ${item.kind} #${item.number} in ${item.mode} mode${item.command ? ` from ${item.command} command` : ''}.`);
 
   if (item.kind === 'pull_request') {
@@ -377,7 +385,8 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   if (!security.sensitive && !fixBlocker && shouldReportFixAttempt(triage, inputs)) {
     await updateIssueStatus(octokit, inputs, issue, 'Attempting fix PR', 'Running the guarded repair loop, validation, diff guardrails, and independent review gate.', sweepAttentionMention(inputs, issue.owner));
   }
-  const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs, command.extraInstructions);
+  const humanDriver = command.command && FIX_INTENT_COMMANDS.has(command.command) && command.actor && command.actor !== 'unknown' ? command.actor : undefined;
+  const prUrl = security.sensitive || fixBlocker ? undefined : await maybeCreateFixPr(octokit, issue, triage, inputs, command.extraInstructions, humanDriver);
   let closed = false;
   if (shouldCloseIssue(inputs, command, triage.closeProposal.propose, triage.closeProposal.confidence, duplicate.duplicate, duplicate.score, security.sensitive)) {
     if (inputs.dryRun) {
