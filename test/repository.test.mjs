@@ -365,7 +365,7 @@ test('sweep comments can mention the configured fix PR review team', () => {
   assert.match(readme, /new sweep triage\/security comments mention that team/);
 });
 
-test('scheduled sweeps can ignore trusted author issues by default', () => {
+test('automatic issue processing and sweeps skip trusted authors before side effects', () => {
   const action = read('action.yml');
   const inputs = read('src/inputs.ts');
   const index = read('src/index.ts');
@@ -378,12 +378,15 @@ test('scheduled sweeps can ignore trusted author issues by default', () => {
   assert.match(issueContext, /authorAssociation: string/);
   assert.match(action, /skip-sweep-trusted-authors/);
   assert.match(inputs, /skipSweepTrustedAuthors: parseBoolean\(core\.getInput\('skip-sweep-trusted-authors'\) \|\| 'true'\)/);
-  assert.match(index, /shouldSkipSweepIssueAuthor/);
-  assert.match(index, /!inputs\.skipSweepTrustedAuthors/);
+  const authorGuard = read('src/issue-author.ts');
+  assert.match(index, /await shouldSkipIssueAuthor\(octokit, inputs, command, issue\)/);
+  assert.match(authorGuard, /!inputs\.skipSweepTrustedAuthors/);
   assert.match(index, /skipped trusted author issue/);
-  assert.match(index, /TRUSTED_ASSOCIATIONS\.has\(issue\.authorAssociation\.toUpperCase\(\)\)/);
-  assert.match(index, /getCollaboratorPermissionLevel/);
-  assert.match(index, /TRUSTED_REPOSITORY_PERMISSIONS/);
+  assert.match(authorGuard, /TRUSTED_ASSOCIATIONS\.has\(issue\.authorAssociation\.toUpperCase\(\)\)/);
+  assert.match(authorGuard, /getCollaboratorPermissionLevel/);
+  assert.match(authorGuard, /TRUSTED_REPOSITORY_PERMISSIONS/);
+  assert.ok(index.indexOf('await shouldSkipIssueAuthor(') < index.indexOf('await updateIssueStatus('));
+  assert.match(index, /await processIssue\(octokit, item\.number, itemInputs, itemCommand, item\.source\.commentId\)/);
   assert.match(readme, /collaborator-permission fallback/);
   assert.match(readme, /`skip-sweep-trusted-authors`/);
 });

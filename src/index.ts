@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { replyToCommand } from './command-replies.js';
-import { FIX_INTENT_COMMANDS, resolveCommand, TRUSTED_ASSOCIATIONS, type CommandResolution } from './commands.js';
+import { FIX_INTENT_COMMANDS, resolveCommand, type CommandResolution } from './commands.js';
 import { buildSecurityComment, buildStatusComment, buildTriageComment } from './comment.js';
 import { reviewCommit } from './commit-review.js';
 import { assessDuplicate } from './duplicate-detector.js';
@@ -9,6 +9,7 @@ import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
 import { addLabels, closeIssue, ensureTeamReviewRequested, getIssueComment, getIssueSnapshot, getReviewComment, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
 import { getInputs, type ActionInputs } from './inputs.js';
+import { shouldSkipIssueAuthor } from './issue-author.js';
 import { formatIssuePrompt, type IssueSnapshot } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
 import { filterAllowedLabels } from './labels.js';
@@ -262,8 +263,8 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   const piSessionStartIndex = beginPiSessionScope();
 
   const issue = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
-  if (await shouldSkipSweepIssueAuthor(octokit, inputs, command, issue)) {
-    core.info(`Skipping issue #${issue.number} during sweep because it was created by trusted ${issue.authorAssociation} author ${issue.author}.`);
+  if (await shouldSkipIssueAuthor(octokit, inputs, command, issue)) {
+    core.info(`Skipping issue #${issue.number} in ${inputs.mode} mode because it was created by trusted ${issue.authorAssociation} author ${issue.author}.`);
     return {
       conclusion: 'skipped trusted author issue',
       labels: issue.labels,
@@ -558,42 +559,6 @@ function shouldSkipUnchangedIssue(inputs: ActionInputs, command: CommandResoluti
   if (previousHash !== snapshotHash) return false;
   if (command.command) return false;
   return inputs.mode === 'auto' || inputs.mode === 'triage' || inputs.mode === 'investigate' || inputs.mode === 'sweep';
-}
-
-async function shouldSkipSweepIssueAuthor(octokit: Octokit, inputs: ActionInputs, command: CommandResolution, issue: IssueSnapshot): Promise<boolean> {
-  if (!inputs.skipSweepTrustedAuthors) return false;
-  if (inputs.mode !== 'sweep') return false;
-  if (command.command) return false;
-  if (TRUSTED_ASSOCIATIONS.has(issue.authorAssociation.toUpperCase())) return true;
-
-  const permission = await getIssueAuthorRepositoryPermission(octokit, issue);
-  if (!permission) return false;
-  return TRUSTED_REPOSITORY_PERMISSIONS.has(permission.toLowerCase());
-}
-
-const TRUSTED_REPOSITORY_PERMISSIONS = new Set(['admin', 'maintain', 'write', 'triage']);
-
-async function getIssueAuthorRepositoryPermission(octokit: Octokit, issue: IssueSnapshot): Promise<string | undefined> {
-  if (!issue.author || issue.author === 'unknown') return undefined;
-
-  try {
-    const response = await octokit.rest.repos.getCollaboratorPermissionLevel({
-      owner: issue.owner,
-      repo: issue.repo,
-      username: issue.author,
-    });
-    const permission = response.data.permission;
-    if (permission) {
-      core.info(`Issue #${issue.number} author ${issue.author} has repository permission: ${permission}.`);
-    }
-    return permission;
-  } catch (error) {
-    const status = typeof error === 'object' && error !== null && 'status' in error ? (error as { status?: number }).status : undefined;
-    if (status !== 404) {
-      core.warning(`Could not check repository permission for issue #${issue.number} author ${issue.author}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    return undefined;
-  }
 }
 
 function issueSnapshotHashOptions(inputs: ActionInputs) {
