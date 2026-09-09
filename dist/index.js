@@ -26377,6 +26377,39 @@ function normalizeMode(value) {
   throw new Error("mode must be one of: auto, triage, investigate, fix, commit-review, pr-review, sweep, enqueue, drain-queue");
 }
 
+// src/issue-author.ts
+async function shouldSkipIssueAuthor(octokit, inputs, command, issue2) {
+  if (!inputs.skipSweepTrustedAuthors) return false;
+  if (inputs.mode !== "auto" && inputs.mode !== "triage" && inputs.mode !== "investigate" && inputs.mode !== "sweep") return false;
+  if (command.command) return false;
+  if (TRUSTED_ASSOCIATIONS.has(issue2.authorAssociation.toUpperCase())) return true;
+  const permission = await getIssueAuthorRepositoryPermission(octokit, issue2);
+  if (!permission) return false;
+  return TRUSTED_REPOSITORY_PERMISSIONS.has(permission.toLowerCase());
+}
+var TRUSTED_REPOSITORY_PERMISSIONS = /* @__PURE__ */ new Set(["admin", "maintain", "write", "triage"]);
+async function getIssueAuthorRepositoryPermission(octokit, issue2) {
+  if (!issue2.author || issue2.author === "unknown") return void 0;
+  try {
+    const response = await octokit.rest.repos.getCollaboratorPermissionLevel({
+      owner: issue2.owner,
+      repo: issue2.repo,
+      username: issue2.author
+    });
+    const permission = response.data.permission;
+    if (permission) {
+      info(`Issue #${issue2.number} author ${issue2.author} has repository permission: ${permission}.`);
+    }
+    return permission;
+  } catch (error2) {
+    const status = typeof error2 === "object" && error2 !== null && "status" in error2 ? error2.status : void 0;
+    if (status !== 404) {
+      warning(`Could not check repository permission for issue #${issue2.number} author ${issue2.author}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    }
+    return void 0;
+  }
+}
+
 // src/label-sync.ts
 function desiredManagedLabels(prefix, triage, security) {
   const labels = /* @__PURE__ */ new Set();
@@ -27661,8 +27694,8 @@ async function processIssue(octokit, issueNumber, inputs, command, forcedComment
   info(`Processing issue #${issueNumber} in ${inputs.mode} mode`);
   const piSessionStartIndex = beginPiSessionScope();
   const issue2 = await getIssueSnapshot(octokit, issueNumber, inputs.maxComments, forcedCommentId);
-  if (await shouldSkipSweepIssueAuthor(octokit, inputs, command, issue2)) {
-    info(`Skipping issue #${issue2.number} during sweep because it was created by trusted ${issue2.authorAssociation} author ${issue2.author}.`);
+  if (await shouldSkipIssueAuthor(octokit, inputs, command, issue2)) {
+    info(`Skipping issue #${issue2.number} in ${inputs.mode} mode because it was created by trusted ${issue2.authorAssociation} author ${issue2.author}.`);
     return {
       conclusion: "skipped trusted author issue",
       labels: issue2.labels,
@@ -27919,37 +27952,6 @@ function shouldSkipUnchangedIssue(inputs, command, previousHash, snapshotHash) {
   if (previousHash !== snapshotHash) return false;
   if (command.command) return false;
   return inputs.mode === "auto" || inputs.mode === "triage" || inputs.mode === "investigate" || inputs.mode === "sweep";
-}
-async function shouldSkipSweepIssueAuthor(octokit, inputs, command, issue2) {
-  if (!inputs.skipSweepTrustedAuthors) return false;
-  if (inputs.mode !== "sweep") return false;
-  if (command.command) return false;
-  if (TRUSTED_ASSOCIATIONS.has(issue2.authorAssociation.toUpperCase())) return true;
-  const permission = await getIssueAuthorRepositoryPermission(octokit, issue2);
-  if (!permission) return false;
-  return TRUSTED_REPOSITORY_PERMISSIONS.has(permission.toLowerCase());
-}
-var TRUSTED_REPOSITORY_PERMISSIONS = /* @__PURE__ */ new Set(["admin", "maintain", "write", "triage"]);
-async function getIssueAuthorRepositoryPermission(octokit, issue2) {
-  if (!issue2.author || issue2.author === "unknown") return void 0;
-  try {
-    const response = await octokit.rest.repos.getCollaboratorPermissionLevel({
-      owner: issue2.owner,
-      repo: issue2.repo,
-      username: issue2.author
-    });
-    const permission = response.data.permission;
-    if (permission) {
-      info(`Issue #${issue2.number} author ${issue2.author} has repository permission: ${permission}.`);
-    }
-    return permission;
-  } catch (error2) {
-    const status = typeof error2 === "object" && error2 !== null && "status" in error2 ? error2.status : void 0;
-    if (status !== 404) {
-      warning(`Could not check repository permission for issue #${issue2.number} author ${issue2.author}: ${error2 instanceof Error ? error2.message : String(error2)}`);
-    }
-    return void 0;
-  }
 }
 function issueSnapshotHashOptions(inputs) {
   return {
