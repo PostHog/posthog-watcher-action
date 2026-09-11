@@ -27,7 +27,11 @@ const result = await build({
       build.onResolve({ filter: /^(@actions\/(core|github)|node:os)$/ }, ({ path }) => ({ path, namespace: 'mock' }));
       build.onLoad({ filter: /.*/, namespace: 'mock' }, ({ path }) => ({
         contents: path === 'node:os'
-          ? `export default { tmpdir: () => ${JSON.stringify(dir)} };`
+          ? `
+              import { dirname } from 'node:path';
+              import { fileURLToPath } from 'node:url';
+              export default { tmpdir: () => dirname(fileURLToPath(import.meta.url)) };
+            `
           : path === '@actions/core'
             ? `export const warnings = []; export const warning = message => warnings.push(message); export const info = () => {}; export const debug = () => {};`
             : `
@@ -97,7 +101,7 @@ test('successful gist publication still includes session links', async () => {
   assert.equal(reference.kind, 'gist');
   assert.equal(reference.gistUrl, 'https://gist.github.com/session');
   assert.match(formatPiSessionMarkdown(reference), /### Pi session/);
-  assert.match(formatPiSessionMarkdown(reference), /https:\/\/gist.github.com\/session/);
+  assert.match(formatPiSessionMarkdown(reference), /https:\/\/gist\.github\.com\/session/);
   assert.equal(gist.calls[0].token, inputs.piSessionGistToken);
   assert.equal(gist.calls[0].params.public, false);
   assert.equal(warnings.length, 0);
