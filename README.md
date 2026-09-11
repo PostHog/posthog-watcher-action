@@ -495,7 +495,7 @@ Behavior:
 | `progress-comments` | `true` | Update the marker-backed issue comment with in-progress phase/status updates. |
 | `pi-session-sharing` | `false` | Save the resumable primary pi JSONL session and add download/`pi --fork` instructions to watcher comments. |
 | `pi-session-sharing-mode` | `state-branch` | Where to save the primary pi session: `state-branch` or `gist`. |
-| `pi-session-gist-token` | empty | Token with `gist` permission, required when `pi-session-sharing-mode: gist`. |
+| `pi-session-gist-token` | empty | Token with `gist` permission for `pi-session-sharing-mode: gist`. Missing or invalid credentials skip session links without blocking findings. |
 | `state-repo` | current repo | Repository for durable state as `owner/repo`. |
 | `state-branch` | `posthog-watcher-state` | Branch for state records and dashboard. |
 | `comment-marker` | `<!-- posthog-watcher-action -->` | Configurable marker used to create/update durable comments and exclude watcher-generated bot comments from later security assessments. |
@@ -509,7 +509,7 @@ Behavior:
 - Fix mode removes GitHub/secrets-like variables from the `pi` subprocess environment, exposes only the selected provider's credential to the pi process (`POSTHOG_API_KEY` for `posthog/*` models, `OPENAI_API_KEY` for `openai/*` models), and disables the agent `bash` tool. Wrapper-owned reproduction and validation commands still run outside pi in independent shell subprocesses.
 - `posthog/*` models load a bundled pi extension (`dist/posthog-provider.js`) that registers the PostHog LLM gateway as a pi model provider; extension auto-discovery stays disabled via `--no-extensions`.
 - The wrapper, not `pi`, performs GitHub API mutations.
-- `pi-session-sharing` is disabled by default. When enabled, triage and repair calls continue one primary session in a temporary directory, while independent review calls remain ephemeral. The wrapper saves that primary `.jsonl` under `pi-sessions/` on `state-branch` by default, and comments include `pi --fork path/to/session.jsonl` handoff instructions. Set `pi-session-sharing-mode: gist` plus `pi-session-gist-token` to upload the session to a private gist instead of the state branch.
+- `pi-session-sharing` is disabled by default. When enabled, triage and repair calls continue one primary session in a temporary directory, while independent review calls remain ephemeral. The wrapper saves that primary `.jsonl` under `pi-sessions/` on `state-branch` by default, and comments include `pi --fork path/to/session.jsonl` handoff instructions. Set `pi-session-sharing-mode: gist` plus `pi-session-gist-token` to upload the session to a private gist instead of the state branch. Session publishing is best-effort: missing credentials, access errors, or upload failures produce a workflow warning and omit the session section, but findings are still posted to the issue or PR.
 - Draft PR creation is skipped if the diff is too large or touches workflow files, lockfiles, or minified files.
 - Watcher fix/repair commits are created through GitHub's commit API instead of raw `git commit`/`git push`, so they are GitHub-signed Verified commits.
 - New draft fix PRs fill `.github/pull_request_template.md` when present. Templates can use `<!-- posthog-watcher:problem -->`, `<!-- posthog-watcher:changes -->`, `<!-- posthog-watcher:validation -->`, and `<!-- posthog-watcher:agent-context -->`; conventional Problem, Changes, and Agent context sections are also recognized, with append-only composition as a fallback.
