@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Octokit } from './github.js';
 import type { ActionInputs } from './inputs.js';
+import { redactSecrets } from './redact.js';
 
 export interface PiSessionCapture {
   enabled: boolean;
@@ -75,6 +76,16 @@ export async function finishPiSessionCapture(capture: PiSessionCapture): Promise
 }
 
 export async function publishPiSessionFiles(octokit: Octokit, inputs: ActionInputs, subject: string, startIndex: number): Promise<PiSessionReference | undefined> {
+  try {
+    return await uploadPiSessionFiles(octokit, inputs, subject, startIndex);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    core.warning(redactSecrets(`Could not publish pi session for ${subject}; continuing without session links: ${message}`, [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken, inputs.piSessionGistToken]));
+    return undefined;
+  }
+}
+
+async function uploadPiSessionFiles(octokit: Octokit, inputs: ActionInputs, subject: string, startIndex: number): Promise<PiSessionReference | undefined> {
   if (!inputs.piSessionSharing || inputs.dryRun) return undefined;
 
   const selected = records.slice(startIndex);
