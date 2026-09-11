@@ -24155,6 +24155,34 @@ function defaultBranch() {
 var import_promises = require("node:fs/promises");
 var import_node_os = __toESM(require("node:os"));
 var import_node_path = __toESM(require("node:path"));
+
+// src/redact.ts
+var SECRET_PATTERNS = [
+  /sk-[A-Za-z0-9_-]{20,}/g,
+  /github_pat_[A-Za-z0-9_]{20,}/g,
+  /gh[pousr]_[A-Za-z0-9_]{20,}/g,
+  /ghs_[A-Za-z0-9_]{20,}/g
+];
+function redactSecrets(value, explicitSecrets = []) {
+  let redacted = value;
+  for (const secret of explicitSecrets) {
+    if (secret) redacted = redacted.split(secret).join("[REDACTED]");
+  }
+  for (const pattern of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "[REDACTED]");
+  }
+  return redacted;
+}
+function redactJson(value, explicitSecrets = []) {
+  if (typeof value === "string") return redactSecrets(value, explicitSecrets);
+  if (Array.isArray(value)) return value.map((item) => redactJson(item, explicitSecrets));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactJson(item, explicitSecrets)]));
+  }
+  return value;
+}
+
+// src/pi-sessions.ts
 var sessionRoot = import_node_path.default.join(import_node_os.default.tmpdir(), "posthog-watcher-pi-sessions");
 var records = [];
 var primarySessionPath;
@@ -24193,6 +24221,15 @@ async function finishPiSessionCapture(capture) {
   records.push({ callNumber: capture.callNumber, path: sessionPath });
 }
 async function publishPiSessionFiles(octokit, inputs, subject, startIndex) {
+  try {
+    return await uploadPiSessionFiles(octokit, inputs, subject, startIndex);
+  } catch (error2) {
+    const message = error2 instanceof Error ? error2.message : String(error2);
+    warning(redactSecrets(`Could not publish pi session for ${subject}; continuing without session links: ${message}`, [inputs.openaiApiKey, inputs.posthogApiKey, inputs.posthogCodeApiKey, inputs.githubToken, inputs.piSessionGistToken]));
+    return void 0;
+  }
+}
+async function uploadPiSessionFiles(octokit, inputs, subject, startIndex) {
   if (!inputs.piSessionSharing || inputs.dryRun) return void 0;
   const selected = records.slice(startIndex);
   if (!selected.length) return void 0;
@@ -24434,32 +24471,6 @@ function getPiCallCount() {
 }
 function resetPiCallCount() {
   piCalls = 0;
-}
-
-// src/redact.ts
-var SECRET_PATTERNS = [
-  /sk-[A-Za-z0-9_-]{20,}/g,
-  /github_pat_[A-Za-z0-9_]{20,}/g,
-  /gh[pousr]_[A-Za-z0-9_]{20,}/g,
-  /ghs_[A-Za-z0-9_]{20,}/g
-];
-function redactSecrets(value, explicitSecrets = []) {
-  let redacted = value;
-  for (const secret of explicitSecrets) {
-    if (secret) redacted = redacted.split(secret).join("[REDACTED]");
-  }
-  for (const pattern of SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, "[REDACTED]");
-  }
-  return redacted;
-}
-function redactJson(value, explicitSecrets = []) {
-  if (typeof value === "string") return redactSecrets(value, explicitSecrets);
-  if (Array.isArray(value)) return value.map((item) => redactJson(item, explicitSecrets));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactJson(item, explicitSecrets)]));
-  }
-  return value;
 }
 
 // src/pi-runner.ts
