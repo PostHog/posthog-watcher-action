@@ -24,7 +24,6 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Can enforce reproduction-first issue fixes with a wrapper-owned command that must fail before the fix and pass after it.
 - Supports PR repair for PRs created by this action; commands/review events on other PRs are ignored.
 - Pulls failing GitHub Actions job log snippets and review comments into PR repair prompts when available.
-- Supports manual commit review mode for selected commits.
 - Supports capped scheduled backlog sweeps.
 - Can optionally save one resumable primary pi JSONL session and link fork/resume instructions from watcher comments.
 - Can enqueue issue/PR events into a durable FIFO queue and drain them sequentially from a scheduled/manual worker.
@@ -186,7 +185,6 @@ On `issue_comment` events, the action only runs when a trusted maintainer/collab
 ```text
 @posthog-watcher triage
 @posthog-watcher investigate
-@posthog-watcher review
 @posthog-watcher plan
 @posthog-watcher propose-fix
 @posthog-watcher fix
@@ -232,7 +230,7 @@ For issue comments or review comments on pull requests created by this action, `
 - diff guardrails pass
 - the independent review gate approves
 
-Commands and review events on PRs not created by this action are ignored. Fork PRs are skipped because `GITHUB_TOKEN` cannot safely push to fork branches.
+Standalone code reviews and review-thread Q&A are not supported. Mentions in review comments require an explicit repair command; unmentioned review feedback can still trigger repair. Commands and review events on PRs not created by this action are ignored. Fork PRs are skipped because `GITHUB_TOKEN` cannot safely push to fork branches.
 
 ## Related context and close/apply
 
@@ -381,62 +379,6 @@ jobs:
 
 If a queued item fails, its attempt count is incremented before processing. The worker stops on that item to preserve FIFO, leaving it for a later worker run. Once `max-queue-attempts` is reached, the item is dropped with a warning so the queue can continue.
 
-## Commit reviews
-
-Commit reviews are manual only via `.github/workflows/commit-review.yml` or `mode: commit-review`. They inspect one commit, write a workflow summary, and perform no labels, comments, PRs, or other GitHub mutations.
-
-## Pull request reviews
-
-`mode: pr-review` posts a CodeRabbit-style code review on a pull request: a summary comment with a verdict (`clean`, `comment`, or `changes_requested`), inline diff comments for each finding, and read-only replies to follow-up questions on its review threads. It is opt-in via `allow-pr-review: true`.
-
-Only **same-repo** pull requests are reviewed. Fork PRs are always skipped so the model API key is never exposed to untrusted code; guard the job with `if: github.event.pull_request.head.repo.full_name == github.repository` as well so fork events never start a run.
-
-Example workflow:
-
-```yaml
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review_comment:
-    types: [created]
-
-# Review-comment payloads also carry pull_request, so keying on the PR number
-# alone would let any comment cancel an in-flight review. Push runs share one
-# group per PR (a new push supersedes the stale review); each comment run gets
-# its own group and never cancels anything.
-concurrency:
-  group: posthog-watcher-pr-review-${{ github.event.pull_request.number }}-${{ github.event.comment.id || 'review' }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  pr-review:
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-      - uses: PostHog/posthog-watcher-action@main
-        with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          mode: pr-review
-          allow-pr-review: 'true'
-```
-
-Behavior:
-
-- `pi` runs read-only (`read`, `grep`, `find`, `ls`) over the diff; it never edits files or calls the GitHub API.
-- Inline findings are validated against the diff — a finding whose line is not part of the change is dropped (never posted). If GitHub rejects the inline positions, the findings fall back into the summary comment.
-- The summary comment is upserted via a hidden marker (derived from `comment-marker`, so multiple watcher instances stay isolated); re-review on each push updates one comment instead of piling up. Inline findings carry a hidden fingerprint so the same finding is not re-posted on later pushes.
-- Any review comment — thread root or reply — that mentions the watcher without a fix command (for example `@posthog-watcher why is this unsafe?`) is answered read-only in the thread, with the thread's original finding as context.
-- `pr-review` mode is strictly read-only: fix commands (`fix`, `fix ci`, `address review`, `rebase`) and plain review comments are skipped with a logged conclusion instead of being routed to PR repair. Run a separate workflow with `mode: auto`/`fix` (and `contents: write`) for repair commands.
-- The same security gate that protects issues applies: a PR whose title/body looks security-sensitive, or whose title/body/diff contains real-looking credentials, is skipped unless `allow-security-ai: true`. The diff is only checked for credential evidence — code that merely mentions "security" is not flagged.
-
 ## Inputs
 
 | Input | Default | Description |
@@ -453,7 +395,7 @@ Behavior:
 | `posthog-code-poll-interval-ms` | `15000` | Poll interval while waiting for a delegated run to finish. |
 | `posthog-code-timeout-ms` | `1800000` | Overall timeout for a delegated run before the action requests cancellation. |
 | `issue-number` | event issue | Issue or PR number to process. |
-| `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `commit-review`, `pr-review`, `sweep`, `enqueue`, or `drain-queue`. |
+| `mode` | `auto` | `auto`, `triage`, `investigate`, `fix`, `sweep`, `enqueue`, or `drain-queue`. |
 | `allow-fix` | `false` | Allows draft PR creation or same-repo PR branch repair when guardrails pass. |
 | `require-fix-command` | `false` | If true, fixes are proposal-only until a trusted watcher fix command is posted. Default keeps automatic fixes enabled when `allow-fix: true`. |
 | `command-mention` | `@posthog-watcher` | GitHub mention that triggers issue-comment commands. Accepts values with or without `@`. |
@@ -473,10 +415,6 @@ Behavior:
 | `reproduction-command` | empty | Optional command expected to fail before an issue fix and pass after it. |
 | `require-reproduction` | `false` | Require a failing reproduction before issue fix attempts; uses `reproduction-command`, or `validation-command` after `pi` adds a minimal regression check. |
 | `fix-pr-review-team` | empty | Optional team reviewer slug or `org/team` (for example `acme/platform-reviewers`) for generated fix PRs. Empty means no team review is requested. |
-| `commit-sha` | empty | Commit SHA to review in `commit-review` mode. |
-| `allow-pr-review` | `false` | Allows `pr-review` mode to post code reviews (summary comment plus inline diff comments) on same-repo pull requests. Fork PRs are always skipped. |
-| `max-review-files` | `30` | Maximum changed files to review in `pr-review` mode. |
-| `max-review-findings` | `20` | Maximum inline findings `pr-review` may post on a pull request. |
 | `max-sweep-items` | `10` | Maximum open issues to process in `sweep` mode. |
 | `max-sweep-fix-items` | `0` | Maximum sweep items that may attempt fixes. |
 | `sweep-query` | `is:issue is:open archived:false` | Search query suffix for `sweep` mode. |
@@ -522,7 +460,6 @@ Behavior:
 - Sweep mode disables fixes by default with `max-sweep-fix-items: 0`.
 - `enqueue` mode writes only queue state and does not require a model API key.
 - `drain-queue` processes queued items FIFO and requires the selected model's API key like other pi-backed modes.
-- Commit reviews are manual and read-only.
 
 ## Development
 

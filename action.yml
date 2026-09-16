@@ -56,7 +56,7 @@ inputs:
     required: false
     default: ''
   mode:
-    description: auto, triage, investigate, fix, commit-review, pr-review, sweep, enqueue, or drain-queue
+    description: auto, triage, investigate, fix, sweep, enqueue, or drain-queue
     required: false
     default: auto
   allow-fix:
@@ -133,22 +133,6 @@ inputs:
     default: 'false'
   fix-pr-review-team:
     description: Optional team reviewer slug or org/team (for example acme/platform-reviewers) for generated fix PRs. Empty means no team review request.
-    required: false
-    default: ''
-  allow-pr-review:
-    description: 'Whether pr-review mode may post code reviews (summary comment + inline diff comments) on pull requests. Only same-repo PRs are reviewed; fork PRs are always skipped so the model API key is never exposed to untrusted code.'
-    required: false
-    default: 'false'
-  max-review-files:
-    description: Maximum changed files to include when reviewing a pull request in pr-review mode
-    required: false
-    default: '30'
-  max-review-findings:
-    description: Maximum inline findings pr-review may post on a single pull request
-    required: false
-    default: '20'
-  commit-sha:
-    description: Commit SHA to review when mode is commit-review. Defaults to github.sha.
     required: false
     default: ''
   max-sweep-items:
@@ -257,8 +241,6 @@ outputs:
     description: Whether the issue was closed by an explicit trusted close/apply-close command
   triage-json:
     description: Raw normalized triage JSON
-  review-verdict:
-    description: Pull request review verdict when mode is pr-review (clean, comment, or changes_requested)
 
 runs:
   using: node24

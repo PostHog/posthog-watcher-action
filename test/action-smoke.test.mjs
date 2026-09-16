@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -82,4 +82,47 @@ test('issue comments without watcher commands are skipped before inputs are requ
   assert.equal(result.status, 0);
   assert.match(result.stdout + result.stderr, /Skipping run: issue comment does not contain a @posthog-watcher command/);
   assert.doesNotMatch(result.stdout + result.stderr, /Input required and not supplied/);
+});
+
+for (const mode of ['pr-review', 'commit-review']) {
+  test(`removed ${mode} mode fails before processing a pull request`, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'posthog-watcher-action-'));
+    const eventPath = join(dir, 'event.json');
+    writeFileSync(eventPath, JSON.stringify({ pull_request: { number: 123 } }));
+    const result = spawnSync(process.execPath, ['dist/index.js'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        INPUT_MODE: mode,
+        GITHUB_EVENT_NAME: 'pull_request',
+        GITHUB_EVENT_PATH: eventPath,
+      },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stdout + result.stderr, /mode must be one of: auto, triage, investigate, fix, sweep, enqueue, drain-queue/);
+  });
+}
+
+test('PR triage skips code review', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'posthog-watcher-action-'));
+  const eventPath = join(dir, 'event.json');
+  const outputPath = join(dir, 'output');
+  writeFileSync(outputPath, '');
+  writeFileSync(eventPath, JSON.stringify({ pull_request: { number: 123 } }));
+  const result = spawnSync(process.execPath, ['dist/index.js'], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      INPUT_MODE: 'triage',
+      GITHUB_OUTPUT: outputPath,
+      'INPUT_OPENAI-API-KEY': 'dummy-openai-key',
+      'INPUT_GITHUB-TOKEN': 'dummy-github-token',
+      INPUT_MODEL: 'openai/gpt-5.6-terra:high',
+      GITHUB_REPOSITORY: 'example-org/example-project',
+      GITHUB_EVENT_NAME: 'pull_request',
+      GITHUB_EVENT_PATH: eventPath,
+    },
+  });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(readFileSync(outputPath, 'utf8'), /conclusion<<[^\n]+\nskipped PR; only repair is supported\n/);
 });

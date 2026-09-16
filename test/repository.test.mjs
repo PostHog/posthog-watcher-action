@@ -31,27 +31,6 @@ test('readme declares generic repository scope', () => {
   assert.match(readme, /Allow GitHub Actions to create and approve pull requests/);
 });
 
-test('commit review is repository and language agnostic', () => {
-  const source = read('src/commit-review.ts');
-  assert.doesNotMatch(source, /PostHog SDK repository/);
-  assert.match(source, /current repository/);
-
-  // The shared code-file heuristics recognize a broad set of languages,
-  // manifests, and build files, and only treat docs (not examples) as skippable.
-  const codeFiles = read('src/code-files.ts');
-  assert.match(codeFiles, /Dockerfile/);
-  assert.match(codeFiles, /Makefile/);
-  assert.match(codeFiles, /php/);
-  assert.match(codeFiles, /scala/);
-  assert.doesNotMatch(codeFiles, /docs\?\|examples\?/);
-});
-
-test('pull request review prompt is repository agnostic', () => {
-  const source = read('src/pr-review.ts');
-  assert.doesNotMatch(source, /PostHog SDK repository/);
-  assert.match(source, /code review for the current repository/);
-});
-
 test('maintainer issue comment commands are documented', () => {
   const readme = read('README.md');
   const commands = read('src/commands.ts');
@@ -166,7 +145,6 @@ test('new MVP features are documented', () => {
   const readme = read('README.md');
   assert.match(readme, /Repair loop/);
   assert.match(readme, /Related context and close\/apply/);
-  assert.match(readme, /Commit reviews/);
   assert.match(readme, /allow-close: true/);
   assert.match(readme, /GitHub token options/);
   assert.match(readme, /Fine-grained PAT/);
@@ -494,7 +472,7 @@ test('pi JSON output parser falls back to final assistant messages', () => {
 test('workflow actions are pinned to full-length SHAs', () => {
   const workflowFiles = readdirSync('.github/workflows').map((name) => `.github/workflows/${name}`);
   const compositeFiles = ['.github/actions/setup/action.yml'];
-  assert.ok(workflowFiles.length >= 4, 'expected all workflow files to be scanned');
+  assert.ok(workflowFiles.length > 0, 'expected workflow files to be scanned');
   const workflows = [...workflowFiles, ...compositeFiles].map(read).join('\n');
   assert.doesNotMatch(workflows, /uses:\s+[^\s]+@v\d/);
   assert.match(workflows, /actions\/checkout@[0-9a-f]{40}/);
