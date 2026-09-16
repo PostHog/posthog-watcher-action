@@ -5,8 +5,6 @@ import type { Mode } from './inputs.js';
 export type WatcherCommand =
   | 'triage'
   | 'investigate'
-  | 'review'
-  | 'pr-review-reply'
   | 'fix'
   | 'plan'
   | 'fix-ci'
@@ -57,12 +55,8 @@ export function resolveCommand(commandMention = configuredCommandMention()): Com
       return { ...commandToResolution(parsed.command), actor, extraInstructions: parsed.extraInstructions, commandMention };
     }
 
-    // Any review comment (thread root or reply) that mentions the watcher
-    // without a fix command is a question: answer it read-only in the thread
-    // rather than editing code.
     if (bodyMentionsCommand(body, commandMention)) {
-      core.info(`Treating pull request review comment as a ${commandMention} review question.`);
-      return { ...commandToResolution('pr-review-reply'), actor, extraInstructions: body, commandMention };
+      return { shouldRun: false, reason: 'review thread replies are not supported; use an explicit repair command' };
     }
 
     core.info(`Treating pull request review comment as ${commandMention} address review.`);
@@ -128,7 +122,7 @@ export function parseWatcherCommandDetails(body: string, commandMention = '@post
   if (!text) return undefined;
 
   const commandPatterns: Array<[RegExp, WatcherCommand]> = [
-    [/^(?:triage|review|re-review|re-run)\b\s*([\s\S]*)$/i, 'triage'],
+    [/^(?:triage|re-run)\b\s*([\s\S]*)$/i, 'triage'],
     [/^investigate\b\s*([\s\S]*)$/i, 'investigate'],
     [/^fix\s+ci\b\s*([\s\S]*)$/i, 'fix-ci'],
     [/^address\s+review\b\s*([\s\S]*)$/i, 'address-review'],
@@ -173,7 +167,6 @@ function escapeRegExp(value: string): string {
 function commandToResolution(command: WatcherCommand): CommandResolution {
   switch (command) {
     case 'triage':
-    case 'review':
     case 'status':
     case 'explain':
     case 'ask':
@@ -181,8 +174,6 @@ function commandToResolution(command: WatcherCommand): CommandResolution {
     case 'investigate':
     case 'plan':
       return { shouldRun: true, command, mode: 'investigate' };
-    case 'pr-review-reply':
-      return { shouldRun: true, command, mode: 'pr-review' };
     case 'fix':
     case 'fix-ci':
     case 'address-review':

@@ -3,11 +3,10 @@ import * as github from '@actions/github';
 import { replyToCommand } from './command-replies.js';
 import { FIX_INTENT_COMMANDS, resolveCommand, type CommandResolution } from './commands.js';
 import { buildSecurityComment, buildStatusComment, buildTriageComment } from './comment.js';
-import { reviewCommit } from './commit-review.js';
 import { assessDuplicate } from './duplicate-detector.js';
 import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
-import { addLabels, closeIssue, ensureTeamReviewRequested, getIssueComment, getIssueSnapshot, getReviewComment, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
+import { addLabels, closeIssue, ensureTeamReviewRequested, getIssueComment, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
 import { getInputs, type ActionInputs } from './inputs.js';
 import { shouldSkipIssueAuthor } from './issue-author.js';
 import { formatIssuePrompt, type IssueSnapshot } from './issue-context.js';
@@ -16,7 +15,6 @@ import { filterAllowedLabels } from './labels.js';
 import { getPiCallCount, resetPiCallCount } from './pi-budget.js';
 import { beginPiSessionScope, formatPiSessionMarkdown, publishPiSessionFiles } from './pi-sessions.js';
 import { isPosthogModel, runPi } from './pi-runner.js';
-import { replyToPullRequestReviewComment, reviewPullRequest, type PullRequestReviewResult, type ReviewThreadRef } from './pr-review.js';
 import { enqueueCurrentPayload, incrementQueueAttempt, readQueue, removeQueueItem, type QueueItem } from './queue.js';
 import { redactSecrets } from './redact.js';
 import { repairPullRequest } from './pr-repair-runner.js';
@@ -61,43 +59,10 @@ async function main(): Promise<void> {
   }
 
   requireModelApiKey(rawInputs);
-  // pr-review workflows stay in pr-review: event-inferred command modes (for
-  // example address-review => fix from a plain review comment) must not hijack
-  // an explicitly configured read-only review run into a repair run.
-  const inputs = command.mode && rawInputs.mode !== 'drain-queue' && rawInputs.mode !== 'pr-review' ? { ...rawInputs, mode: command.mode } : rawInputs;
+  const inputs = command.mode && rawInputs.mode !== 'drain-queue' ? { ...rawInputs, mode: command.mode } : rawInputs;
 
   if (inputs.mode === 'drain-queue') {
     await drainQueue(octokit, inputs);
-    return;
-  }
-
-  if (inputs.mode === 'commit-review') {
-    const result = await reviewCommit(inputs);
-    core.setOutput('conclusion', result.conclusion);
-    core.setOutput('triage-json', JSON.stringify(result));
-    return;
-  }
-
-  if (inputs.mode === 'pr-review') {
-    const pullNumber = resolveIssueNumber(inputs.issueNumber);
-    if (command.command === 'pr-review-reply') {
-      const thread = pullRequestReviewThread();
-      if (!thread) {
-        core.info('Skipping pr-review reply because the event payload has no review comment id.');
-        core.setOutput('conclusion', 'skipped pr-review reply without a review comment id');
-        return;
-      }
-      const result = await replyToPullRequestReviewComment(octokit, pullNumber, inputs, thread, command.extraInstructions ?? '');
-      setPrReviewOutputs(result);
-      return;
-    }
-    if (command.command && command.command !== 'triage') {
-      core.info(`pr-review mode is read-only and does not handle ${command.command}; use a workflow with mode auto or fix for repair commands.`);
-      core.setOutput('conclusion', `skipped ${command.command} command in pr-review mode`);
-      return;
-    }
-    const result = await reviewPullRequest(octokit, pullNumber, inputs);
-    setPrReviewOutputs(result);
     return;
   }
 
@@ -121,14 +86,8 @@ async function main(): Promise<void> {
       core.setOutput('pr-url', result.prUrl);
       return;
     }
-    // The typed 'review' command parses as 'triage' (commands.ts commandPatterns).
-    if (command.command === 'triage') {
-      const result = await reviewPullRequest(octokit, issueNumber, inputs);
-      setPrReviewOutputs(result);
-      return;
-    }
-    core.info(`PR review/triage requires mode: pr-review or ${inputs.commandMention} review; use ${inputs.commandMention} fix for same-repo PR repair.`);
-    core.setOutput('conclusion', 'skipped PR mutation; use pr-review mode or a review/fix command');
+    core.info(`Use ${inputs.commandMention} fix for same-repo watcher PR repair.`);
+    core.setOutput('conclusion', 'skipped PR; only repair is supported');
     return;
   }
 
@@ -194,20 +153,8 @@ async function processQueueItem(octokit: Octokit, item: QueueItem, inputs: Actio
   core.info(`Draining queued ${item.kind} #${item.number} in ${item.mode} mode${item.command ? ` from ${item.command} command` : ''}.`);
 
   if (item.kind === 'pull_request') {
-    // QueuedMode cannot represent pr-review, so queued review questions are
-    // recognized by their command and re-enter the reply path explicitly.
-    if (item.command === 'pr-review-reply') {
-      if (!item.source.commentId) {
-        core.info(`Skipping queued pr-review reply for PR #${item.number} because no review comment id was stored.`);
-        return;
-      }
-      const comment = await getReviewComment(octokit, item.source.commentId);
-      const thread = { commentId: item.source.commentId, rootId: comment?.inReplyToId ?? item.source.commentId };
-      await replyToPullRequestReviewComment(octokit, item.number, { ...itemInputs, mode: 'pr-review' }, thread, item.extraInstructions ?? '');
-      return;
-    }
     if (item.mode !== 'fix') {
-      core.info(`Skipping queued PR #${item.number} in ${item.mode} mode; the queue only repairs PRs. Use mode: pr-review (unqueued) for code review.`);
+      core.info(`Skipping queued PR #${item.number} in ${item.mode} mode; the queue only repairs PRs.`);
       return;
     }
     await repairPullRequest(octokit, item.number, itemInputs, item.command);
@@ -634,21 +581,6 @@ function requireModelApiKey(inputs: ActionInputs): void {
   if (!inputs.openaiApiKey) {
     throw new Error('openai-api-key is required for openai/* models in modes that process items with pi. It may be omitted only when mode is enqueue.');
   }
-}
-
-function pullRequestReviewThread(): ReviewThreadRef | undefined {
-  const payload = github.context.payload as { comment?: { id?: number; in_reply_to_id?: number } };
-  const commentId = payload.comment?.id;
-  if (!commentId) return undefined;
-  // Replies must target the thread root: GitHub's replies endpoint expects the
-  // top-level review comment, and the root holds the finding being asked about.
-  return { commentId, rootId: payload.comment?.in_reply_to_id ?? commentId };
-}
-
-function setPrReviewOutputs(result: PullRequestReviewResult): void {
-  core.setOutput('conclusion', result.conclusion);
-  core.setOutput('comment-url', result.commentUrl);
-  if (result.verdict) core.setOutput('review-verdict', result.verdict);
 }
 
 function setOutputs(result: ProcessIssueResult): void {
