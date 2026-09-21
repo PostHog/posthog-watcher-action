@@ -11,7 +11,7 @@ import { getInputs, type ActionInputs } from './inputs.js';
 import { shouldSkipIssueAuthor } from './issue-author.js';
 import { formatIssuePrompt, type IssueSnapshot } from './issue-context.js';
 import { desiredManagedLabels, staleManagedLabels } from './label-sync.js';
-import { filterAllowedLabels } from './labels.js';
+import { filterAllowedLabels, issueTypeLabel } from './labels.js';
 import { getPiCallCount, resetPiCallCount } from './pi-budget.js';
 import { beginPiSessionScope, formatPiSessionMarkdown, publishPiSessionFiles } from './pi-sessions.js';
 import { isPosthogModel, runPi } from './pi-runner.js';
@@ -307,6 +307,8 @@ async function processIssue(octokit: Octokit, issueNumber: number, inputs: Actio
   triage.fix.straightforward = inputs.allowFix && !security.sensitive && triage.confidence >= 0.75 && !triage.needsMoreInfo && triage.fix.risk === 'low';
 
   const labels = filterAllowedLabels(triage.labels, allowedExistingLabelNames, repositoryLabelNames);
+  const typeLabel = issueTypeLabel(triage.issueType, allowedExistingLabelNames, repositoryLabelNames);
+  if (typeLabel && !labels.includes(typeLabel)) labels.push(typeLabel);
   const managedLabels = desiredManagedLabels(inputs.managedLabelPrefix, triage, security).filter((label) =>
     repositoryLabelNames.some((existing) => existing.toLowerCase() === label.toLowerCase()),
   );
