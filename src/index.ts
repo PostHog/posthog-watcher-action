@@ -6,7 +6,7 @@ import { buildSecurityComment, buildStatusComment, buildTriageComment } from './
 import { assessDuplicate } from './duplicate-detector.js';
 import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { maybeCreateFixPr } from './fix-runner.js';
-import { addLabels, closeIssue, ensureTeamReviewRequested, getIssueComment, getIssueSnapshot, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
+import { addLabels, closeIssue, ensureTeamReviewRequested, getIssueComment, getIssueSnapshot, isOwnWatcherPullRequestHead, listRepositoryLabels, removeLabel, resolveIssueNumber, searchOpenIssueNumbers, upsertIssueComment, type Octokit, type RepositoryLabel } from './github.js';
 import { getInputs, type ActionInputs } from './inputs.js';
 import { shouldSkipIssueAuthor } from './issue-author.js';
 import { formatIssuePrompt, type IssueSnapshot } from './issue-context.js';
@@ -17,6 +17,7 @@ import { beginPiSessionScope, formatPiSessionMarkdown, publishPiSessionFiles } f
 import { isPosthogModel, runPi } from './pi-runner.js';
 import { enqueueCurrentPayload, incrementQueueAttempt, readQueue, removeQueueItem, type QueueItem } from './queue.js';
 import { redactSecrets } from './redact.js';
+import { reconcileClosedIssuePullRequest, reconcileWatcherPullRequests } from './pr-reconciler.js';
 import { repairPullRequest } from './pr-repair-runner.js';
 import { getRelatedContext } from './related.js';
 import { assessIssueSecurity } from './security.js';
@@ -152,6 +153,11 @@ async function processQueueItem(octokit: Octokit, item: QueueItem, inputs: Actio
   };
   core.info(`Draining queued ${item.kind} #${item.number} in ${item.mode} mode${item.command ? ` from ${item.command} command` : ''}.`);
 
+  if (item.kind === 'issue-closed') {
+    await reconcileClosedIssuePullRequest(octokit, item.number, itemInputs);
+    return;
+  }
+
   if (item.kind === 'pull_request') {
     if (item.mode !== 'fix') {
       core.info(`Skipping queued PR #${item.number} in ${item.mode} mode; the queue only repairs PRs.`);
@@ -180,6 +186,7 @@ async function queuedCommandBody(octokit: Octokit, item: QueueItem): Promise<str
 }
 
 async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
+  const closedStalePrs = (await reconcileWatcherPullRequests(octokit, inputs)).filter((result) => result.closed).length;
   const issueNumbers = await searchOpenIssueNumbers(octokit, inputs.sweepQuery, inputs.maxSweepItems);
   core.info(`Sweep found ${issueNumbers.length} open issue(s).`);
 
@@ -201,7 +208,7 @@ async function sweep(octokit: Octokit, inputs: ActionInputs): Promise<void> {
     }
   }
 
-  core.setOutput('conclusion', `swept ${results.length - skipped} issue(s), skipped ${skipped}`);
+  core.setOutput('conclusion', `swept ${results.length - skipped} issue(s), skipped ${skipped}, closed ${closedStalePrs} stale watcher PR(s)`);
   core.setOutput('triage-json', JSON.stringify(results));
 }
 
@@ -562,7 +569,7 @@ function runUrl(): string {
 async function isWatcherPullRequest(octokit: Octokit, pullNumber: number): Promise<boolean> {
   const { owner, repo } = github.context.repo;
   const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
-  return pull.data.head.repo?.full_name === `${owner}/${repo}` && pull.data.head.ref.startsWith('posthog-watcher/');
+  return isOwnWatcherPullRequestHead({ ref: pull.data.head.ref, repoFullName: pull.data.head.repo?.full_name });
 }
 
 function isPullRequestPayload(): boolean {

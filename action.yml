@@ -67,6 +67,10 @@ inputs:
     description: Whether trusted maintainer close/apply-close commands may close high-confidence issues
     required: false
     default: 'false'
+  allow-close-own-prs:
+    description: Whether the action may close its own still-draft posthog-watcher/issue-N pull requests, and delete their branches, once the linked issue is closed. Requires pull-requests write and contents write. Never closes PRs with commits from other authors or PRs marked ready for review.
+    required: false
+    default: 'false'
   allow-security-ai:
     description: Whether suspected security-sensitive reports may be sent to pi/OpenAI. Defaults to false.
     required: false

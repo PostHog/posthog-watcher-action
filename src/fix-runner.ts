@@ -1,12 +1,15 @@
 import * as core from '@actions/core';
 import { readFile } from 'node:fs/promises';
 import { filterExistingFiles, readAffectedPackageNames } from './affected-packages.js';
+import { assessDuplicate } from './duplicate-detector.js';
+import { findPreExistingFixBlocker } from './fix-blocker.js';
 import { createDraftPullRequest, defaultBranch, ensurePullRequestAssignee, ensureTeamReviewRequested, findOpenPullRequestForBranch, type Octokit } from './github.js';
 import { git } from './git.js';
 import type { ActionInputs } from './inputs.js';
 import type { IssueSnapshot } from './issue-context.js';
 import { cloudModelFromPiModel } from './posthog-code-client.js';
 import { buildPullRequestBody } from './pull-request-body.js';
+import { getRelatedContext } from './related.js';
 import { delegateFixToPostHogCode } from './posthog-code-fix-runner.js';
 import { runIssueRepair } from './repair-run.js';
 import { commitChangesWithGitHubSignature } from './signed-commit.js';
@@ -67,6 +70,12 @@ export async function maybeCreateFixPr(
       return undefined;
     }
 
+    const lateBlocker = existingPr ? undefined : await findLateFixBlocker(octokit, issue, triage, inputs);
+    if (lateBlocker) {
+      core.warning(`Skipping fix PR because a blocker appeared while the repair ran: ${lateBlocker}`);
+      return undefined;
+    }
+
     const affectedPackages = await readAffectedPackageNames(repair.files);
     const existingFiles = await filterExistingFiles(repair.files);
     const commit = await commitChangesWithGitHubSignature(octokit, {
@@ -106,6 +115,12 @@ export async function maybeCreateFixPr(
   } finally {
     await restoreCheckout(originalRef);
   }
+}
+
+async function findLateFixBlocker(octokit: Octokit, issue: IssueSnapshot, triage: TriageResult, inputs: ActionInputs): Promise<string | undefined> {
+  const relatedItems = await getRelatedContext(octokit, issue, inputs.maxRelatedItems);
+  const blocker = await findPreExistingFixBlocker(octokit, issue, relatedItems, triage, assessDuplicate(issue, relatedItems));
+  return blocker?.reason;
 }
 
 async function currentCheckoutRef(): Promise<string> {
