@@ -23,6 +23,7 @@ export interface ActionInputs {
   mode: Mode;
   allowFix: boolean;
   allowClose: boolean;
+  allowCloseOwnPrs: boolean;
   allowSecurityAi: boolean;
   requireFixCommand: boolean;
   commandMention: string;
@@ -85,6 +86,7 @@ export function getInputs(): ActionInputs {
     mode,
     allowFix: parseBoolean(core.getInput('allow-fix')),
     allowClose: parseBoolean(core.getInput('allow-close')),
+    allowCloseOwnPrs: parseBoolean(core.getInput('allow-close-own-prs')),
     allowSecurityAi: parseBoolean(core.getInput('allow-security-ai')),
     requireFixCommand: parseBoolean(core.getInput('require-fix-command')),
     commandMention: normalizeCommandMention(core.getInput('command-mention') || '@posthog-watcher'),

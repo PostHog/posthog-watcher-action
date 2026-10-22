@@ -17,6 +17,7 @@ This is intentionally much simpler than ClawSweeper, but now includes conservati
 - Looks up a capped set of related same-repo issues/PRs, including explicit refs and closing PR candidates.
 - Skips fix PR creation when a related open PR or older related issue already appears to address the same report, when triage proposes a duplicate/already-fixed canonical item, or, by default, when a feature request was not explicitly sent through fix mode.
 - Can propose closes in comments and optionally close issues only with an explicit trusted command plus `allow-close: true`.
+- Can close its own still-draft fix PRs, and delete their branches, once the linked issue is closed, only with `allow-close-own-prs: 'true'`.
 - Runs a bounded repair loop and independent read-only review gate before committing generated fix diffs.
 - Creates watcher commits through GitHub's commit API, like `planetscale/ghcommit-action`, so commits are signed by GitHub's GPG key and show as Verified.
 - Can request review from a configured team on generated fix PRs when it is not already requested.
@@ -209,7 +210,20 @@ Fix PRs use a stable branch per issue:
 posthog-watcher/issue-123
 ```
 
-If an open PR or remote branch already exists for that branch, the action reuses and updates it instead of opening a duplicate PR.
+If an open PR or remote branch already exists for that branch, the action reuses and updates it instead of opening a duplicate PR. After the repair loop finishes and before a new branch is pushed, the action re-checks the related-PR and duplicate blockers once more, so a human PR opened while the repair was running stops the draft from being created.
+
+### Closing stale draft PRs
+
+By default, a draft fix PR stays open forever once someone else fixes the linked issue. With `allow-close-own-prs: 'true'`, the action closes its own stale drafts when the linked issue is closed. It only closes a PR when all of these are true:
+
+- the PR head is in this repository and its branch is exactly `posthog-watcher/issue-<n>`, the same check PR repair uses
+- issue `<n>` is closed
+- the PR is still a draft
+- every commit on the PR is authored by the identity that opened it (the `github-token` user); PRs with commits from anyone else are left open
+
+When it closes a PR, it posts a comment such as `Closing: #5176 was closed on 2026-10-01 via #5181, so this draft is no longer needed. Reopen if the issue is reopened.`, closes the PR, and deletes the `posthog-watcher/issue-<n>` branch so a reopened issue gets a fresh fix attempt. The `via #<m>` clause only appears when the issue's closing event points at a merged PR. A non-draft PR or a PR with commits from other authors gets a marker-backed comment explaining why it was left open instead. `dry-run: 'true'` logs these mutations without applying them.
+
+The check runs in two places: when the queue worker drains an `issues.closed` event (add `closed` to the enqueue workflow's `issues` types), and at the start of every `sweep` run, which lists open PRs on `posthog-watcher/issue-*` branches and reconciles each against its issue. The workflow that runs it needs `pull-requests: write` and `contents: write`, which the sample worker and sweep workflows already grant.
 
 ## Repair loop, reproduction, and review gate
 
@@ -252,7 +266,7 @@ Actual issue closing requires all of:
 - close proposal confidence >= 95%
 - issue is not security-sensitive
 
-The action never closes pull requests in this MVP.
+The action never closes pull requests opened by anyone else. It closes only its own still-draft PRs on `posthog-watcher/issue-*` branches, only when the linked issue is closed, and only with `allow-close-own-prs: 'true'`; see [Closing stale draft PRs](#closing-stale-draft-prs).
 
 ## Security policy
 
@@ -276,6 +290,8 @@ Default managed labels include:
 
 The action stores a deterministic snapshot hash in the marker-backed watcher comment and skips later non-command issue processing when the title, body, non-managed labels, non-watcher comments, and relevant watcher settings have not changed. This prevents re-triaging the same unchanged issues on repeated issue events or scheduled sweeps. Explicit maintainer commands still force a fresh run. If `fix-pr-review-team` is configured, new sweep triage/security comments mention that team (using `org/team`, or the repository owner plus a bare team slug) so older issues do not silently accumulate watcher comments.
 
+With `allow-close-own-prs: 'true'`, each sweep run first reconciles open watcher draft PRs against their linked issues and closes the stale ones; see [Closing stale draft PRs](#closing-stale-draft-prs). This pass does not call pi and does not count toward `max-sweep-items`.
+
 A sample scheduled/manual workflow lives in `.github/workflows/sweep.yml`.
 
 ## Durable state, memory, and dashboard
@@ -296,7 +312,7 @@ concurrency:
 
 ## Dedicated queue worker
 
-For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or a model API key (`posthog-api-key`/`openai-api-key`). Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Set `trigger-drain-workflow: true` to dispatch the worker immediately after a new queue item is written. Pull request review comments and commented/changes-requested reviews are treated as `<command-mention> address review` for same-repo watcher PRs.
+For repositories with bursty issue/comment events, use `enqueue` plus `drain-queue` instead of running expensive triage directly from every event. `enqueue` writes a deduplicated item to `queue.json` on `state-branch` and returns quickly without `pi` or a model API key (`posthog-api-key`/`openai-api-key`). Queue storage uses the same `state-repo`/`state-branch` inputs as durable state, but does not require `state-enabled: true`. A scheduled/manual worker then drains queued items FIFO, one at a time, up to `max-queue-items`. Set `trigger-drain-workflow: true` to dispatch the worker immediately after a new queue item is written. Pull request review comments and commented/changes-requested reviews are treated as `<command-mention> address review` for same-repo watcher PRs. `issues.closed` events are queued as `issue-closed` items; the worker uses them to close the watcher's own stale draft PR for that issue when `allow-close-own-prs: 'true'` is set on the worker, and otherwise logs and skips them.
 
 Event enqueue workflow:
 
@@ -305,7 +321,7 @@ name: PostHog Watcher enqueue
 
 on:
   issues:
-    types: [opened, reopened, edited]
+    types: [opened, reopened, edited, closed]
   issue_comment:
     types: [created]
   pull_request:
@@ -374,6 +390,7 @@ jobs:
           max-queue-items: '5'
           max-queue-attempts: '3'
           allow-fix: 'true'
+          allow-close-own-prs: 'true' # close the watcher's own stale draft PRs when their issue closes
           state-branch: posthog-watcher-state
 ```
 
@@ -401,6 +418,7 @@ If a queued item fails, its attempt count is incremented before processing. The 
 | `command-mention` | `@posthog-watcher` | GitHub mention that triggers issue-comment commands. Accepts values with or without `@`. |
 | `block-feature-fixes` | `true` | If true, feature requests require explicit trusted fix intent (`mode: fix` or a fix/repair command) before opening draft PRs. |
 | `allow-close` | `false` | Allows explicit trusted close/apply-close commands to close high-confidence issues. |
+| `allow-close-own-prs` | `false` | Allows the action to close its own still-draft `posthog-watcher/issue-<n>` PRs, with a comment, and delete their branches once issue `<n>` is closed. Never closes non-draft PRs or PRs with commits from other authors. Needs `pull-requests: write` and `contents: write`. |
 | `allow-security-ai` | `false` | Allows suspected security-sensitive reports to be sent to pi/OpenAI. |
 | `dry-run` | `false` | Logs intended GitHub mutations without applying them. |
 | `labels` | `*` | Labels `pi` may request. `*` uses all repository labels except labels with `managed-label-prefix`; a comma-separated list restricts selection to matching existing repo labels. Label descriptions are included in the triage prompt when available. |
@@ -456,6 +474,7 @@ If a queued item fails, its attempt count is incremented before processing. The 
 - Generated fix diffs, including newly created non-ignored files, must pass an independent review gate with issue/PR context.
 - Related issue/PR discovery is capped and same-repo only.
 - Close/apply requires an explicit trusted command and `allow-close: true`.
+- Closing pull requests requires `allow-close-own-prs: true` and is limited to the action's own still-draft PRs on `posthog-watcher/issue-*` branches whose linked issue is closed; PRs marked ready for review or carrying commits from other authors are never closed, and the action never closes PRs it did not open.
 - Security-sensitive issues skip fix and close actions, and skip third-party AI by default.
 - Sweep mode disables fixes by default with `max-sweep-fix-items: 0`.
 - `enqueue` mode writes only queue state and does not require a model API key.

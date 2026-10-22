@@ -7,7 +7,7 @@ import type { ActionInputs, QueuedMode } from './inputs.js';
 const QUEUE_PATH = 'queue.json';
 const QUEUE_VERSION = 1;
 
-export type QueueItemKind = 'issue' | 'pull_request';
+export type QueueItemKind = 'issue' | 'pull_request' | 'issue-closed';
 
 export interface QueueItem {
   id: string;
@@ -105,8 +105,9 @@ function buildQueueItem(inputs: ActionInputs, command: CommandResolution): Queue
 }
 
 function resolveQueueItemKind(): QueueItemKind {
-  const payload = github.context.payload as { issue?: { pull_request?: unknown }; pull_request?: unknown };
+  const payload = github.context.payload as { action?: string; issue?: { pull_request?: unknown }; pull_request?: unknown };
   if (payload.pull_request || payload.issue?.pull_request) return 'pull_request';
+  if (github.context.eventName === 'issues' && payload.action === 'closed') return 'issue-closed';
   return 'issue';
 }
 
@@ -171,7 +172,7 @@ function parseQueue(content: string | undefined): QueueFile {
 function isQueueItem(item: unknown): item is QueueItem {
   if (!item || typeof item !== 'object') return false;
   const candidate = item as Partial<QueueItem>;
-  return typeof candidate.id === 'string' && (candidate.kind === 'issue' || candidate.kind === 'pull_request') && typeof candidate.number === 'number' && typeof candidate.mode === 'string';
+  return typeof candidate.id === 'string' && (candidate.kind === 'issue' || candidate.kind === 'pull_request' || candidate.kind === 'issue-closed') && typeof candidate.number === 'number' && typeof candidate.mode === 'string';
 }
 
 function stateRepository(inputs: ActionInputs): { owner: string; repo: string } {

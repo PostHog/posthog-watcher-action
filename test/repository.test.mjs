@@ -510,6 +510,49 @@ test('posthog gateway provider is wired for posthog/* models', () => {
   assert.match(readme, /PostHog LLM gateway/);
 });
 
+test('stale watcher draft PRs are closed only behind allow-close-own-prs', () => {
+  const action = read('action.yml');
+  const inputs = read('src/inputs.ts');
+  const index = read('src/index.ts');
+  const queue = read('src/queue.ts');
+  const githubSource = read('src/github.ts');
+  const reconciler = read('src/pr-reconciler.ts');
+  const readme = read('README.md');
+  assert.match(action, /allow-close-own-prs/);
+  assert.match(inputs, /allowCloseOwnPrs: parseBoolean\(core\.getInput\('allow-close-own-prs'\)\)/);
+  // Same own-PR predicate as PR repair and enqueue: same-repo head on a posthog-watcher/ branch.
+  assert.match(githubSource, /export function isOwnWatcherPullRequestHead/);
+  assert.match(githubSource, /head\.repoFullName === `\$\{owner\}\/\$\{repo\}` && head\.ref\.startsWith\('posthog-watcher\/'\)/);
+  assert.match(index, /return isOwnWatcherPullRequestHead\(/);
+  assert.match(reconciler, /isOwnWatcherPullRequestHead\(pull\.head\)/);
+  assert.match(githubSource, /export async function closePullRequest/);
+  assert.match(githubSource, /export async function deleteBranch/);
+  assert.match(reconciler, /if \(!inputs\.allowCloseOwnPrs\)/);
+  assert.match(reconciler, /if \(!pull\.draft\)/);
+  assert.match(reconciler, /commitAuthorsOtherThan/);
+  assert.match(reconciler, /inputs\.dryRun/);
+  assert.match(reconciler, /Reopen if the issue is reopened\./);
+  // Queue: closed issue events become a distinct item kind that drains into the reconciler.
+  assert.match(queue, /'issue-closed'/);
+  assert.match(queue, /payload\.action === 'closed'/);
+  assert.match(index, /if \(item\.kind === 'issue-closed'\)/);
+  assert.match(index, /await reconcileClosedIssuePullRequest\(octokit, item\.number, itemInputs\)/);
+  assert.match(index, /await reconcileWatcherPullRequests\(octokit, inputs\)/);
+  assert.ok(index.indexOf('await reconcileWatcherPullRequests(') < index.indexOf('await searchOpenIssueNumbers('));
+  assert.match(readme, /`allow-close-own-prs`/);
+  assert.match(readme, /types: \[opened, reopened, edited, closed\]/);
+  assert.doesNotMatch(readme, /never closes pull requests in this MVP/);
+});
+
+test('fix PRs re-check blockers after the repair before pushing a new branch', () => {
+  const fixRunner = read('src/fix-runner.ts');
+  assert.match(fixRunner, /findLateFixBlocker/);
+  assert.match(fixRunner, /findPreExistingFixBlocker\(octokit, issue, relatedItems, triage, assessDuplicate\(issue, relatedItems\)\)/);
+  assert.match(fixRunner, /existingPr \? undefined : await findLateFixBlocker/);
+  assert.ok(fixRunner.indexOf('await runIssueRepair(') < fixRunner.indexOf('await findLateFixBlocker('));
+  assert.ok(fixRunner.indexOf('await findLateFixBlocker(') < fixRunner.indexOf('await commitChangesWithGitHubSignature('));
+});
+
 test('posthog code fix delegation is wired behind fix-executor', () => {
   const action = read('action.yml');
   const inputs = read('src/inputs.ts');

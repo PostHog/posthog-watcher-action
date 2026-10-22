@@ -102,6 +102,16 @@ export async function closeIssue(octokit: Octokit, issueNumber: number): Promise
   await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'closed' });
 }
 
+export async function closePullRequest(octokit: Octokit, pullNumber: number): Promise<void> {
+  const { owner, repo } = github.context.repo;
+  await octokit.rest.pulls.update({ owner, repo, pull_number: pullNumber, state: 'closed' });
+}
+
+export async function deleteBranch(octokit: Octokit, branch: string): Promise<void> {
+  const { owner, repo } = github.context.repo;
+  await octokit.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+}
+
 export async function searchOpenIssueNumbers(octokit: Octokit, query: string, maxItems: number): Promise<number[]> {
   const { owner, repo } = github.context.repo;
   const response = await octokit.rest.search.issuesAndPullRequests({
@@ -132,7 +142,23 @@ export async function upsertIssueComment(octokit: Octokit, issueNumber: number, 
   return created.data.html_url;
 }
 
-export async function findOpenPullRequestForBranch(octokit: Octokit, branch: string): Promise<{ number: number; url: string } | undefined> {
+export interface OpenPullRequest {
+  number: number;
+  url: string;
+  title: string;
+  draft: boolean;
+  author?: string;
+  head: PullRequestHead;
+}
+
+export interface PullRequestHead {
+  ref: string;
+  repoFullName?: string;
+}
+
+type PullRequestListItem = { number: number; html_url: string; title: string; draft?: boolean; user?: { login?: string } | null; head: { ref: string; repo?: { full_name?: string } | null } };
+
+export async function findOpenPullRequestForBranch(octokit: Octokit, branch: string): Promise<OpenPullRequest | undefined> {
   const { owner, repo } = github.context.repo;
   const pulls = await octokit.rest.pulls.list({
     owner,
@@ -142,7 +168,29 @@ export async function findOpenPullRequestForBranch(octokit: Octokit, branch: str
     per_page: 10,
   });
   const pull = pulls.data[0];
-  return pull ? { number: pull.number, url: pull.html_url } : undefined;
+  return pull ? toOpenPullRequest(pull) : undefined;
+}
+
+export async function listOpenPullRequests(octokit: Octokit): Promise<OpenPullRequest[]> {
+  const { owner, repo } = github.context.repo;
+  const pulls = await octokit.paginate(octokit.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
+  return pulls.map((pull: PullRequestListItem) => toOpenPullRequest(pull));
+}
+
+export function isOwnWatcherPullRequestHead(head: PullRequestHead): boolean {
+  const { owner, repo } = github.context.repo;
+  return head.repoFullName === `${owner}/${repo}` && head.ref.startsWith('posthog-watcher/');
+}
+
+function toOpenPullRequest(pull: PullRequestListItem): OpenPullRequest {
+  return {
+    number: pull.number,
+    url: pull.html_url,
+    title: pull.title,
+    draft: Boolean(pull.draft),
+    author: pull.user?.login ?? undefined,
+    head: { ref: pull.head.ref, repoFullName: pull.head.repo?.full_name ?? undefined },
+  };
 }
 
 export async function createDraftPullRequest(octokit: Octokit, params: {
