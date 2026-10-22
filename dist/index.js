@@ -23965,6 +23965,14 @@ async function closeIssue(octokit, issueNumber) {
   const { owner, repo } = context2.repo;
   await octokit.rest.issues.update({ owner, repo, issue_number: issueNumber, state: "closed" });
 }
+async function closePullRequest(octokit, pullNumber) {
+  const { owner, repo } = context2.repo;
+  await octokit.rest.pulls.update({ owner, repo, pull_number: pullNumber, state: "closed" });
+}
+async function deleteBranch(octokit, branch) {
+  const { owner, repo } = context2.repo;
+  await octokit.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+}
 async function searchOpenIssueNumbers(octokit, query, maxItems) {
   const { owner, repo } = context2.repo;
   const response = await octokit.rest.search.issuesAndPullRequests({
@@ -24001,7 +24009,26 @@ async function findOpenPullRequestForBranch(octokit, branch) {
     per_page: 10
   });
   const pull = pulls.data[0];
-  return pull ? { number: pull.number, url: pull.html_url } : void 0;
+  return pull ? toOpenPullRequest(pull) : void 0;
+}
+async function listOpenPullRequests(octokit) {
+  const { owner, repo } = context2.repo;
+  const pulls = await octokit.paginate(octokit.rest.pulls.list, { owner, repo, state: "open", per_page: 100 });
+  return pulls.map((pull) => toOpenPullRequest(pull));
+}
+function isOwnWatcherPullRequestHead(head) {
+  const { owner, repo } = context2.repo;
+  return head.repoFullName === `${owner}/${repo}` && head.ref.startsWith("posthog-watcher/");
+}
+function toOpenPullRequest(pull) {
+  return {
+    number: pull.number,
+    url: pull.html_url,
+    title: pull.title,
+    draft: Boolean(pull.draft),
+    author: pull.user?.login ?? void 0,
+    head: { ref: pull.head.ref, repoFullName: pull.head.repo?.full_name ?? void 0 }
+  };
 }
 async function createDraftPullRequest(octokit, params) {
   const { owner, repo } = context2.repo;
@@ -25350,6 +25377,123 @@ function markVerifiedChecklistItems(body, existingFiles, affectedPackages) {
   }).join("\n");
 }
 
+// src/related.ts
+async function getRelatedContext(octokit, issue2, maxItems) {
+  const related = /* @__PURE__ */ new Map();
+  const limit = Math.max(0, maxItems);
+  if (limit === 0) return [];
+  for (const number of extractSameRepoReferences(issue2)) {
+    if (number === issue2.number || related.size >= limit) continue;
+    const item = await fetchIssueLike(octokit, number, "explicit-reference").catch(() => void 0);
+    if (item) related.set(item.number, item);
+  }
+  if (related.size < limit) {
+    const closingPrs = await searchClosingPullRequests(octokit, issue2, limit - related.size).catch(() => []);
+    for (const item of closingPrs) {
+      if (item.number !== issue2.number && !related.has(item.number) && related.size < limit) {
+        related.set(item.number, item);
+      }
+    }
+  }
+  if (related.size < limit) {
+    const searched = await searchByTitle(octokit, issue2, limit - related.size).catch(() => []);
+    for (const item of searched) {
+      if (item.number !== issue2.number && !related.has(item.number) && related.size < limit) {
+        related.set(item.number, item);
+      }
+    }
+  }
+  return [...related.values()];
+}
+function extractSameRepoReferences(issue2) {
+  const values = /* @__PURE__ */ new Set();
+  const text = [issue2.title, issue2.body, ...issue2.comments.map((comment) => comment.body)].join("\n");
+  const escapedOwner = escapeRegExp3(issue2.owner);
+  const escapedRepo = escapeRegExp3(issue2.repo);
+  for (const match of text.matchAll(/(^|\s)#(\d+)\b/g)) {
+    values.add(Number(match[2]));
+  }
+  const urlPattern = new RegExp(`https://github\\.com/${escapedOwner}/${escapedRepo}/(?:issues|pull)/(\\d+)`, "gi");
+  for (const match of text.matchAll(urlPattern)) {
+    values.add(Number(match[1]));
+  }
+  return [...values].filter(Number.isInteger);
+}
+async function fetchIssueLike(octokit, number, reason) {
+  const { owner, repo } = context2.repo;
+  const response = await octokit.rest.issues.get({ owner, repo, issue_number: number });
+  const item = response.data;
+  return {
+    number,
+    type: item.pull_request ? "pull_request" : "issue",
+    state: item.state,
+    title: item.title,
+    url: item.html_url,
+    labels: item.labels.map((label) => typeof label === "string" ? label : label.name ?? "").filter(Boolean),
+    bodyExcerpt: excerpt(item.body ?? ""),
+    createdAt: item.created_at,
+    reason
+  };
+}
+async function searchClosingPullRequests(octokit, issue2, limit) {
+  const { owner, repo } = context2.repo;
+  const response = await octokit.rest.search.issuesAndPullRequests({
+    q: `repo:${owner}/${repo} is:pr ${issue2.number} in:body`,
+    per_page: Math.min(10, limit)
+  });
+  return response.data.items.filter((item) => new RegExp(`(fixes|closes|resolves)\\s+#${issue2.number}\\b`, "i").test(item.body ?? "")).slice(0, limit).map((item) => ({
+    number: item.number,
+    type: "pull_request",
+    state: item.state,
+    title: item.title,
+    url: item.html_url,
+    labels: item.labels.map((label) => label.name ?? "").filter(Boolean),
+    bodyExcerpt: excerpt(item.body ?? ""),
+    createdAt: item.created_at,
+    reason: "closing-pr"
+  }));
+}
+async function searchByTitle(octokit, issue2, limit) {
+  const { owner, repo } = context2.repo;
+  const terms = issue2.title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((term2) => term2.length >= 4).slice(0, 5);
+  if (!terms.length) return [];
+  const response = await octokit.rest.search.issuesAndPullRequests({
+    q: `repo:${owner}/${repo} is:open ${terms.join(" ")}`,
+    per_page: Math.min(10, limit)
+  });
+  return response.data.items.filter((item) => titleSimilarity2(issue2.title, item.title) >= 0.2).slice(0, limit).map((item) => ({
+    number: item.number,
+    type: item.pull_request ? "pull_request" : "issue",
+    state: item.state,
+    title: item.title,
+    url: item.html_url,
+    labels: item.labels.map((label) => label.name ?? "").filter(Boolean),
+    bodyExcerpt: excerpt(item.body ?? ""),
+    createdAt: item.created_at,
+    reason: "title-search"
+  }));
+}
+function titleSimilarity2(left, right) {
+  const leftTokens = titleTokens2(left);
+  const rightTokens = titleTokens2(right);
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const union = (/* @__PURE__ */ new Set([...leftTokens, ...rightTokens])).size;
+  return intersection / union;
+}
+function titleTokens2(title) {
+  const stopWords = /* @__PURE__ */ new Set(["the", "and", "for", "with", "not", "api", "endpoint", "values", "value", "correctly", "wrong"]);
+  return new Set(
+    title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((token) => token.length >= 4 && !stopWords.has(token))
+  );
+}
+function excerpt(value) {
+  return value.length > 1e3 ? `${value.slice(0, 1e3)}\u2026` : value;
+}
+function escapeRegExp3(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // src/posthog-code-fix-runner.ts
 async function delegateFixToPostHogCode(octokit, issue2, triage, inputs, trustedInstructions = "") {
   const client = new PostHogCodeClient(inputs.posthogCodeApiKey, inputs.posthogCodeProjectId, taskApiHostForRegion(inputs.posthogRegion));
@@ -26022,6 +26166,11 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs, trustedInstruct
     if (!repair) {
       return void 0;
     }
+    const lateBlocker = existingPr ? void 0 : await findLateFixBlocker(octokit, issue2, triage, inputs);
+    if (lateBlocker) {
+      warning(`Skipping fix PR because a blocker appeared while the repair ran: ${lateBlocker}`);
+      return void 0;
+    }
     const affectedPackages = await readAffectedPackageNames(repair.files);
     const existingFiles = await filterExistingFiles(repair.files);
     const commit = await commitChangesWithGitHubSignature(octokit, {
@@ -26058,6 +26207,11 @@ async function maybeCreateFixPr(octokit, issue2, triage, inputs, trustedInstruct
   } finally {
     await restoreCheckout(originalRef);
   }
+}
+async function findLateFixBlocker(octokit, issue2, triage, inputs) {
+  const relatedItems = await getRelatedContext(octokit, issue2, inputs.maxRelatedItems);
+  const blocker = await findPreExistingFixBlocker(octokit, issue2, relatedItems, triage, assessDuplicate(issue2, relatedItems));
+  return blocker?.reason;
 }
 async function currentCheckoutRef() {
   const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
@@ -26114,6 +26268,7 @@ function getInputs() {
     mode,
     allowFix: parseBoolean(getInput("allow-fix")),
     allowClose: parseBoolean(getInput("allow-close")),
+    allowCloseOwnPrs: parseBoolean(getInput("allow-close-own-prs")),
     allowSecurityAi: parseBoolean(getInput("allow-security-ai")),
     requireFixCommand: parseBoolean(getInput("require-fix-command")),
     commandMention: normalizeCommandMention2(getInput("command-mention") || "@posthog-watcher"),
@@ -26355,6 +26510,7 @@ function buildQueueItem(inputs, command) {
 function resolveQueueItemKind() {
   const payload = context2.payload;
   if (payload.pull_request || payload.issue?.pull_request) return "pull_request";
+  if (context2.eventName === "issues" && payload.action === "closed") return "issue-closed";
   return "issue";
 }
 function resolvePayloadNumber(inputs) {
@@ -26406,7 +26562,7 @@ function parseQueue(content) {
 function isQueueItem(item) {
   if (!item || typeof item !== "object") return false;
   const candidate = item;
-  return typeof candidate.id === "string" && (candidate.kind === "issue" || candidate.kind === "pull_request") && typeof candidate.number === "number" && typeof candidate.mode === "string";
+  return typeof candidate.id === "string" && (candidate.kind === "issue" || candidate.kind === "pull_request" || candidate.kind === "issue-closed") && typeof candidate.number === "number" && typeof candidate.mode === "string";
 }
 function stateRepository2(inputs) {
   if (inputs.stateRepo) {
@@ -26466,268 +26622,6 @@ function isConflictLike2(error2) {
 }
 function sleep3(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// src/pr-repair-runner.ts
-async function getPullRequestFailureContext(octokit, pullNumber, headSha) {
-  const { owner, repo } = context2.repo;
-  const parts = [];
-  const checkRuns = await octokit.rest.checks.listForRef({ owner, repo, ref: headSha, per_page: 20 }).catch(() => void 0);
-  for (const check of checkRuns?.data.check_runs ?? []) {
-    if (check.conclusion && check.conclusion !== "success" && check.conclusion !== "neutral" && check.conclusion !== "skipped") {
-      parts.push(`Check ${check.name}: ${check.conclusion} ${check.html_url}`);
-      const jobId = extractJobId(check.html_url ?? "");
-      if (jobId) {
-        const log = await downloadJobLogSnippet(octokit, owner, repo, jobId);
-        if (log) parts.push(`Log snippet for ${check.name}:
-${log}`);
-      }
-    }
-  }
-  const comments = await octokit.paginate(octokit.rest.pulls.listReviewComments, { owner, repo, pull_number: pullNumber, per_page: 20 }).catch(() => []);
-  for (const comment of comments.slice(-10)) {
-    if (comment.body) parts.push(`Review comment on ${comment.path ?? "unknown"}: ${comment.body.slice(0, 500)}`);
-  }
-  return parts.join("\n");
-}
-function extractJobId(url) {
-  const match = url.match(/\/actions\/runs\/\d+\/job\/(\d+)/);
-  return match?.[1] ? Number(match[1]) : void 0;
-}
-async function downloadJobLogSnippet(octokit, owner, repo, jobId) {
-  try {
-    const response = await octokit.request("GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs", {
-      owner,
-      repo,
-      job_id: jobId
-    });
-    const data = typeof response.data === "string" ? response.data : Buffer.from(response.data).toString("utf8");
-    return data.split("\n").slice(-120).join("\n").slice(-6e3);
-  } catch (error2) {
-    debug(`Could not fetch logs for job ${jobId}: ${error2 instanceof Error ? error2.message : String(error2)}`);
-    return void 0;
-  }
-}
-async function repairPullRequest(octokit, pullNumber, inputs, command) {
-  const { owner, repo } = context2.repo;
-  const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
-  const pr = pull.data;
-  if (pr.head.repo?.full_name !== `${owner}/${repo}`) {
-    warning(`Skipping PR repair for forked PR #${pullNumber}; GITHUB_TOKEN cannot safely push to fork branches.`);
-    return { conclusion: "skipped fork PR repair", prUrl: pr.html_url, repaired: false };
-  }
-  if (!command) {
-    return { conclusion: "skipped PR repair because no trusted command was provided", prUrl: pr.html_url, repaired: false };
-  }
-  if (!inputs.allowFix) {
-    info("Skipping PR repair because allow-fix is false.");
-    return { conclusion: "skipped because allow-fix is false", prUrl: pr.html_url, repaired: false };
-  }
-  const branch = pr.head.ref;
-  if (!branch.startsWith("posthog-watcher/")) {
-    return { conclusion: "skipped PR repair because this PR was not created by posthog-watcher-action", prUrl: pr.html_url, repaired: false };
-  }
-  const failureContext = await getPullRequestFailureContext(octokit, pullNumber, pr.head.sha);
-  if ((command === "fix-ci" || command === "address-review") && !failureContext.trim()) {
-    return { conclusion: `skipped ${command} because no failing check or review context was found`, prUrl: pr.html_url, repaired: false };
-  }
-  const originalRef = await currentCheckoutRef2();
-  try {
-    await git(["fetch", "origin", `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
-    await git(["checkout", "-B", branch, `origin/${branch}`]);
-    const expectedHeadOid = await git(["rev-parse", `origin/${branch}`]);
-    const prompt = `Repair pull request #${pullNumber}: ${pr.title}
-
-This is PR repair for a posthog-watcher-action-created PR. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
-
-Failure/review context:
-\`\`\`
-${failureContext || "(none provided; keep changes minimal and issue-specific)"}
-\`\`\`
-
-PR body:
-\`\`\`
-${pr.body ?? "(empty)"}
-\`\`\``;
-    const repair = await runPullRequestRepairSequence(prompt, inputs, {
-      subject: `Pull request #${pullNumber}: ${pr.title}`,
-      failureContext
-    });
-    if (!repair.repaired) {
-      if (repair.warning) warning(repair.warning);
-      return { conclusion: repair.reason, prUrl: pr.html_url, repaired: false };
-    }
-    if (inputs.dryRun) {
-      info(`[dry-run] Would push PR branch ${branch}.`);
-      return { conclusion: "dry-run PR repair completed", prUrl: pr.html_url, repaired: true };
-    }
-    const commit = await commitChangesWithGitHubSignature(octokit, {
-      branch,
-      message: `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`,
-      expectedHeadOid,
-      createBranch: false
-    });
-    info(`Created GitHub-signed commit: ${commit.url}`);
-    return { conclusion: "PR branch repaired", prUrl: pr.html_url, repaired: true };
-  } finally {
-    await restoreCheckout2(originalRef);
-  }
-}
-async function currentCheckoutRef2() {
-  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
-  return branch === "HEAD" ? git(["rev-parse", "HEAD"]) : branch;
-}
-async function restoreCheckout2(originalRef) {
-  await git(["reset", "--hard", "HEAD"]).catch((error2) => warning(`Failed to reset worktree before restore: ${error2 instanceof Error ? error2.message : String(error2)}`));
-  await git(["checkout", originalRef]).catch((error2) => warning(`Failed to restore original checkout ${originalRef}: ${error2 instanceof Error ? error2.message : String(error2)}`));
-}
-
-// src/related.ts
-async function getRelatedContext(octokit, issue2, maxItems) {
-  const related = /* @__PURE__ */ new Map();
-  const limit = Math.max(0, maxItems);
-  if (limit === 0) return [];
-  for (const number of extractSameRepoReferences(issue2)) {
-    if (number === issue2.number || related.size >= limit) continue;
-    const item = await fetchIssueLike(octokit, number, "explicit-reference").catch(() => void 0);
-    if (item) related.set(item.number, item);
-  }
-  if (related.size < limit) {
-    const closingPrs = await searchClosingPullRequests(octokit, issue2, limit - related.size).catch(() => []);
-    for (const item of closingPrs) {
-      if (item.number !== issue2.number && !related.has(item.number) && related.size < limit) {
-        related.set(item.number, item);
-      }
-    }
-  }
-  if (related.size < limit) {
-    const searched = await searchByTitle(octokit, issue2, limit - related.size).catch(() => []);
-    for (const item of searched) {
-      if (item.number !== issue2.number && !related.has(item.number) && related.size < limit) {
-        related.set(item.number, item);
-      }
-    }
-  }
-  return [...related.values()];
-}
-function extractSameRepoReferences(issue2) {
-  const values = /* @__PURE__ */ new Set();
-  const text = [issue2.title, issue2.body, ...issue2.comments.map((comment) => comment.body)].join("\n");
-  const escapedOwner = escapeRegExp3(issue2.owner);
-  const escapedRepo = escapeRegExp3(issue2.repo);
-  for (const match of text.matchAll(/(^|\s)#(\d+)\b/g)) {
-    values.add(Number(match[2]));
-  }
-  const urlPattern = new RegExp(`https://github\\.com/${escapedOwner}/${escapedRepo}/(?:issues|pull)/(\\d+)`, "gi");
-  for (const match of text.matchAll(urlPattern)) {
-    values.add(Number(match[1]));
-  }
-  return [...values].filter(Number.isInteger);
-}
-async function fetchIssueLike(octokit, number, reason) {
-  const { owner, repo } = context2.repo;
-  const response = await octokit.rest.issues.get({ owner, repo, issue_number: number });
-  const item = response.data;
-  return {
-    number,
-    type: item.pull_request ? "pull_request" : "issue",
-    state: item.state,
-    title: item.title,
-    url: item.html_url,
-    labels: item.labels.map((label) => typeof label === "string" ? label : label.name ?? "").filter(Boolean),
-    bodyExcerpt: excerpt(item.body ?? ""),
-    createdAt: item.created_at,
-    reason
-  };
-}
-async function searchClosingPullRequests(octokit, issue2, limit) {
-  const { owner, repo } = context2.repo;
-  const response = await octokit.rest.search.issuesAndPullRequests({
-    q: `repo:${owner}/${repo} is:pr ${issue2.number} in:body`,
-    per_page: Math.min(10, limit)
-  });
-  return response.data.items.filter((item) => new RegExp(`(fixes|closes|resolves)\\s+#${issue2.number}\\b`, "i").test(item.body ?? "")).slice(0, limit).map((item) => ({
-    number: item.number,
-    type: "pull_request",
-    state: item.state,
-    title: item.title,
-    url: item.html_url,
-    labels: item.labels.map((label) => label.name ?? "").filter(Boolean),
-    bodyExcerpt: excerpt(item.body ?? ""),
-    createdAt: item.created_at,
-    reason: "closing-pr"
-  }));
-}
-async function searchByTitle(octokit, issue2, limit) {
-  const { owner, repo } = context2.repo;
-  const terms = issue2.title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((term2) => term2.length >= 4).slice(0, 5);
-  if (!terms.length) return [];
-  const response = await octokit.rest.search.issuesAndPullRequests({
-    q: `repo:${owner}/${repo} is:open ${terms.join(" ")}`,
-    per_page: Math.min(10, limit)
-  });
-  return response.data.items.filter((item) => titleSimilarity2(issue2.title, item.title) >= 0.2).slice(0, limit).map((item) => ({
-    number: item.number,
-    type: item.pull_request ? "pull_request" : "issue",
-    state: item.state,
-    title: item.title,
-    url: item.html_url,
-    labels: item.labels.map((label) => label.name ?? "").filter(Boolean),
-    bodyExcerpt: excerpt(item.body ?? ""),
-    createdAt: item.created_at,
-    reason: "title-search"
-  }));
-}
-function titleSimilarity2(left, right) {
-  const leftTokens = titleTokens2(left);
-  const rightTokens = titleTokens2(right);
-  if (!leftTokens.size || !rightTokens.size) return 0;
-  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
-  const union = (/* @__PURE__ */ new Set([...leftTokens, ...rightTokens])).size;
-  return intersection / union;
-}
-function titleTokens2(title) {
-  const stopWords = /* @__PURE__ */ new Set(["the", "and", "for", "with", "not", "api", "endpoint", "values", "value", "correctly", "wrong"]);
-  return new Set(
-    title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((token) => token.length >= 4 && !stopWords.has(token))
-  );
-}
-function excerpt(value) {
-  return value.length > 1e3 ? `${value.slice(0, 1e3)}\u2026` : value;
-}
-function escapeRegExp3(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// src/snapshot.ts
-var import_node_crypto = require("node:crypto");
-function computeIssueSnapshotHash(issue2, commentMarker, options = {}) {
-  const managedLabelPrefix = options.managedLabelPrefix ?? "posthog-watcher:";
-  const payload = {
-    title: issue2.title,
-    body: issue2.body,
-    labels: issue2.labels.filter((label) => !label.startsWith(managedLabelPrefix)).sort(),
-    comments: issue2.comments.filter((comment) => !comment.body.includes(commentMarker)).map((comment) => ({ author: comment.author, body: comment.body, createdAt: comment.createdAt })),
-    watcherConfig: {
-      mode: options.mode,
-      allowFix: Boolean(options.allowFix),
-      allowClose: Boolean(options.allowClose),
-      requireFixCommand: Boolean(options.requireFixCommand),
-      blockFeatureFixes: Boolean(options.blockFeatureFixes),
-      validationCommand: options.validationCommand ?? "",
-      reproductionCommand: options.reproductionCommand ?? "",
-      requireReproduction: Boolean(options.requireReproduction),
-      repoMemoryEnabled: options.repoMemoryEnabled !== false,
-      progressComments: options.progressComments !== false
-    }
-  };
-  return (0, import_node_crypto.createHash)("sha256").update(JSON.stringify(payload)).digest("hex");
-}
-function findWatcherSnapshot(issue2, commentMarker) {
-  const watcherComment = [...issue2.comments].reverse().find((comment) => comment.body.includes(commentMarker));
-  if (!watcherComment) return {};
-  const hash = watcherComment.body.match(/<!-- posthog-watcher-snapshot:([a-f0-9]{64}) -->/)?.[1];
-  return { hash, url: watcherComment.url };
 }
 
 // src/state.ts
@@ -26918,6 +26812,267 @@ function sleep4(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// src/pr-reconciler.ts
+var WATCHER_ISSUE_BRANCH = /^posthog-watcher\/issue-(\d+)$/;
+async function reconcileClosedIssuePullRequest(octokit, issueNumber, inputs) {
+  if (!inputs.allowCloseOwnPrs) {
+    info(`Skipping watcher PR reconcile for issue #${issueNumber} because allow-close-own-prs is false.`);
+    return { conclusion: "skipped because allow-close-own-prs is false", closed: false };
+  }
+  const pull = await findOpenPullRequestForBranch(octokit, `posthog-watcher/issue-${issueNumber}`);
+  if (!pull) {
+    info(`No open watcher PR found for issue #${issueNumber}; nothing to reconcile.`);
+    return { conclusion: "no open watcher PR", closed: false };
+  }
+  return reconcilePullRequest(octokit, pull, issueNumber, inputs);
+}
+async function reconcileWatcherPullRequests(octokit, inputs) {
+  if (!inputs.allowCloseOwnPrs) {
+    info("Skipping watcher PR reconcile pass because allow-close-own-prs is false.");
+    return [];
+  }
+  const results = [];
+  for (const pull of await listOpenPullRequests(octokit)) {
+    const issueNumber = issueNumberFromBranch(pull.head.ref);
+    if (issueNumber === void 0) continue;
+    try {
+      results.push(await reconcilePullRequest(octokit, pull, issueNumber, inputs));
+    } catch (error2) {
+      warning(`Could not reconcile watcher PR #${pull.number}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    }
+  }
+  info(`Watcher PR reconcile pass checked ${results.length} PR(s) and closed ${results.filter((result) => result.closed).length}.`);
+  return results;
+}
+function issueNumberFromBranch(branch) {
+  const match = branch.match(WATCHER_ISSUE_BRANCH);
+  return match?.[1] ? Number(match[1]) : void 0;
+}
+async function reconcilePullRequest(octokit, pull, issueNumber, inputs) {
+  if (!isOwnWatcherPullRequestHead(pull.head)) {
+    info(`Skipping PR #${pull.number} because head ${pull.head.repoFullName ?? "unknown"}:${pull.head.ref} was not created by posthog-watcher-action.`);
+    return { conclusion: "skipped PR not created by posthog-watcher-action", prUrl: pull.url, closed: false };
+  }
+  const closure = await getIssueClosure(octokit, issueNumber);
+  if (!closure) {
+    info(`Leaving PR #${pull.number} open because issue #${issueNumber} is still open.`);
+    return { conclusion: "skipped because the linked issue is still open", prUrl: pull.url, closed: false };
+  }
+  const closedVia = await findClosingPullRequestNumber(octokit, issueNumber);
+  const closedReason = `#${issueNumber} was closed on ${closure.closedOn}${closedVia ? ` via #${closedVia}` : ""}`;
+  if (!pull.draft) {
+    return leaveOpen(octokit, pull, inputs, `${closedReason}, but this PR was left open because it is no longer a draft. Close it manually if it is no longer needed.`, "skipped PR that is no longer a draft");
+  }
+  const otherAuthors = await commitAuthorsOtherThan(octokit, pull);
+  if (otherAuthors.length) {
+    return leaveOpen(octokit, pull, inputs, `${closedReason}, but this PR was left open because it has commits from ${otherAuthors.join(", ")}. Close it manually if it is no longer needed.`, "skipped PR with commits from other authors");
+  }
+  const body = `Closing: ${closedReason}, so this draft is no longer needed. Reopen if the issue is reopened.`;
+  if (inputs.dryRun) {
+    info(`[dry-run] Would comment on PR #${pull.number}, close it, and delete branch ${pull.head.ref}: ${body}`);
+    return { conclusion: "dry-run would close stale watcher PR", prUrl: pull.url, closed: false };
+  }
+  await upsertIssueComment(octokit, pull.number, inputs.commentMarker, `${inputs.commentMarker}
+${body}`);
+  await closePullRequest(octokit, pull.number);
+  await deleteBranch(octokit, pull.head.ref);
+  info(`Closed stale watcher PR #${pull.number} and deleted branch ${pull.head.ref}.`);
+  const { owner, repo } = context2.repo;
+  await writeStateRecord(octokit, inputs, {
+    kind: "pr",
+    owner,
+    repo,
+    numberOrSha: String(pull.number),
+    title: pull.title,
+    conclusion: "closed stale draft PR after linked issue closed",
+    labels: [],
+    url: pull.url,
+    closed: true,
+    data: { issueNumber, closedOn: closure.closedOn, closedVia, branch: pull.head.ref, runId: context2.runId }
+  });
+  return { conclusion: "closed stale watcher PR", prUrl: pull.url, closed: true };
+}
+async function leaveOpen(octokit, pull, inputs, body, conclusion) {
+  if (inputs.dryRun) {
+    info(`[dry-run] Would leave PR #${pull.number} open and comment: ${body}`);
+  } else {
+    await upsertIssueComment(octokit, pull.number, inputs.commentMarker, `${inputs.commentMarker}
+${body}`);
+  }
+  info(`Leaving PR #${pull.number} open: ${conclusion}.`);
+  return { conclusion, prUrl: pull.url, closed: false };
+}
+async function getIssueClosure(octokit, issueNumber) {
+  const { owner, repo } = context2.repo;
+  const issue2 = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });
+  if (issue2.data.pull_request || issue2.data.state !== "closed") return void 0;
+  return { closedOn: (issue2.data.closed_at ?? (/* @__PURE__ */ new Date()).toISOString()).slice(0, 10) };
+}
+async function findClosingPullRequestNumber(octokit, issueNumber) {
+  const { owner, repo } = context2.repo;
+  try {
+    const events = await octokit.paginate(octokit.rest.issues.listEventsForTimeline, { owner, repo, issue_number: issueNumber, per_page: 100 });
+    const commitSha = [...events].reverse().find((event) => event.event === "closed")?.commit_id;
+    if (!commitSha) return void 0;
+    const pulls = await octokit.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: commitSha });
+    return pulls.data.find((pull) => pull.merged_at)?.number;
+  } catch (error2) {
+    warning(`Could not resolve the PR that closed issue #${issueNumber}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    return void 0;
+  }
+}
+async function commitAuthorsOtherThan(octokit, pull) {
+  const { owner, repo } = context2.repo;
+  const commits = await octokit.paginate(octokit.rest.pulls.listCommits, { owner, repo, pull_number: pull.number, per_page: 100 });
+  const authors = commits.map((commit) => commit.author?.login ?? commit.commit.author?.name ?? "unknown");
+  return [...new Set(authors.filter((author) => !pull.author || author !== pull.author))];
+}
+
+// src/pr-repair-runner.ts
+async function getPullRequestFailureContext(octokit, pullNumber, headSha) {
+  const { owner, repo } = context2.repo;
+  const parts = [];
+  const checkRuns = await octokit.rest.checks.listForRef({ owner, repo, ref: headSha, per_page: 20 }).catch(() => void 0);
+  for (const check of checkRuns?.data.check_runs ?? []) {
+    if (check.conclusion && check.conclusion !== "success" && check.conclusion !== "neutral" && check.conclusion !== "skipped") {
+      parts.push(`Check ${check.name}: ${check.conclusion} ${check.html_url}`);
+      const jobId = extractJobId(check.html_url ?? "");
+      if (jobId) {
+        const log = await downloadJobLogSnippet(octokit, owner, repo, jobId);
+        if (log) parts.push(`Log snippet for ${check.name}:
+${log}`);
+      }
+    }
+  }
+  const comments = await octokit.paginate(octokit.rest.pulls.listReviewComments, { owner, repo, pull_number: pullNumber, per_page: 20 }).catch(() => []);
+  for (const comment of comments.slice(-10)) {
+    if (comment.body) parts.push(`Review comment on ${comment.path ?? "unknown"}: ${comment.body.slice(0, 500)}`);
+  }
+  return parts.join("\n");
+}
+function extractJobId(url) {
+  const match = url.match(/\/actions\/runs\/\d+\/job\/(\d+)/);
+  return match?.[1] ? Number(match[1]) : void 0;
+}
+async function downloadJobLogSnippet(octokit, owner, repo, jobId) {
+  try {
+    const response = await octokit.request("GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs", {
+      owner,
+      repo,
+      job_id: jobId
+    });
+    const data = typeof response.data === "string" ? response.data : Buffer.from(response.data).toString("utf8");
+    return data.split("\n").slice(-120).join("\n").slice(-6e3);
+  } catch (error2) {
+    debug(`Could not fetch logs for job ${jobId}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    return void 0;
+  }
+}
+async function repairPullRequest(octokit, pullNumber, inputs, command) {
+  const { owner, repo } = context2.repo;
+  const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+  const pr = pull.data;
+  if (pr.head.repo?.full_name !== `${owner}/${repo}`) {
+    warning(`Skipping PR repair for forked PR #${pullNumber}; GITHUB_TOKEN cannot safely push to fork branches.`);
+    return { conclusion: "skipped fork PR repair", prUrl: pr.html_url, repaired: false };
+  }
+  if (!command) {
+    return { conclusion: "skipped PR repair because no trusted command was provided", prUrl: pr.html_url, repaired: false };
+  }
+  if (!inputs.allowFix) {
+    info("Skipping PR repair because allow-fix is false.");
+    return { conclusion: "skipped because allow-fix is false", prUrl: pr.html_url, repaired: false };
+  }
+  const branch = pr.head.ref;
+  if (!branch.startsWith("posthog-watcher/")) {
+    return { conclusion: "skipped PR repair because this PR was not created by posthog-watcher-action", prUrl: pr.html_url, repaired: false };
+  }
+  const failureContext = await getPullRequestFailureContext(octokit, pullNumber, pr.head.sha);
+  if ((command === "fix-ci" || command === "address-review") && !failureContext.trim()) {
+    return { conclusion: `skipped ${command} because no failing check or review context was found`, prUrl: pr.html_url, repaired: false };
+  }
+  const originalRef = await currentCheckoutRef2();
+  try {
+    await git(["fetch", "origin", `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
+    await git(["checkout", "-B", branch, `origin/${branch}`]);
+    const expectedHeadOid = await git(["rev-parse", `origin/${branch}`]);
+    const prompt = `Repair pull request #${pullNumber}: ${pr.title}
+
+This is PR repair for a posthog-watcher-action-created PR. Edit the existing PR branch only. Follow karpathy-guidelines. Make the smallest changes needed to address likely CI/review issues. Do not merge, approve, or create a new PR.
+
+Failure/review context:
+\`\`\`
+${failureContext || "(none provided; keep changes minimal and issue-specific)"}
+\`\`\`
+
+PR body:
+\`\`\`
+${pr.body ?? "(empty)"}
+\`\`\``;
+    const repair = await runPullRequestRepairSequence(prompt, inputs, {
+      subject: `Pull request #${pullNumber}: ${pr.title}`,
+      failureContext
+    });
+    if (!repair.repaired) {
+      if (repair.warning) warning(repair.warning);
+      return { conclusion: repair.reason, prUrl: pr.html_url, repaired: false };
+    }
+    if (inputs.dryRun) {
+      info(`[dry-run] Would push PR branch ${branch}.`);
+      return { conclusion: "dry-run PR repair completed", prUrl: pr.html_url, repaired: true };
+    }
+    const commit = await commitChangesWithGitHubSignature(octokit, {
+      branch,
+      message: `Repair PR #${pullNumber}: ${pr.title.slice(0, 80)}`,
+      expectedHeadOid,
+      createBranch: false
+    });
+    info(`Created GitHub-signed commit: ${commit.url}`);
+    return { conclusion: "PR branch repaired", prUrl: pr.html_url, repaired: true };
+  } finally {
+    await restoreCheckout2(originalRef);
+  }
+}
+async function currentCheckoutRef2() {
+  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
+  return branch === "HEAD" ? git(["rev-parse", "HEAD"]) : branch;
+}
+async function restoreCheckout2(originalRef) {
+  await git(["reset", "--hard", "HEAD"]).catch((error2) => warning(`Failed to reset worktree before restore: ${error2 instanceof Error ? error2.message : String(error2)}`));
+  await git(["checkout", originalRef]).catch((error2) => warning(`Failed to restore original checkout ${originalRef}: ${error2 instanceof Error ? error2.message : String(error2)}`));
+}
+
+// src/snapshot.ts
+var import_node_crypto = require("node:crypto");
+function computeIssueSnapshotHash(issue2, commentMarker, options = {}) {
+  const managedLabelPrefix = options.managedLabelPrefix ?? "posthog-watcher:";
+  const payload = {
+    title: issue2.title,
+    body: issue2.body,
+    labels: issue2.labels.filter((label) => !label.startsWith(managedLabelPrefix)).sort(),
+    comments: issue2.comments.filter((comment) => !comment.body.includes(commentMarker)).map((comment) => ({ author: comment.author, body: comment.body, createdAt: comment.createdAt })),
+    watcherConfig: {
+      mode: options.mode,
+      allowFix: Boolean(options.allowFix),
+      allowClose: Boolean(options.allowClose),
+      requireFixCommand: Boolean(options.requireFixCommand),
+      blockFeatureFixes: Boolean(options.blockFeatureFixes),
+      validationCommand: options.validationCommand ?? "",
+      reproductionCommand: options.reproductionCommand ?? "",
+      requireReproduction: Boolean(options.requireReproduction),
+      repoMemoryEnabled: options.repoMemoryEnabled !== false,
+      progressComments: options.progressComments !== false
+    }
+  };
+  return (0, import_node_crypto.createHash)("sha256").update(JSON.stringify(payload)).digest("hex");
+}
+function findWatcherSnapshot(issue2, commentMarker) {
+  const watcherComment = [...issue2.comments].reverse().find((comment) => comment.body.includes(commentMarker));
+  if (!watcherComment) return {};
+  const hash = watcherComment.body.match(/<!-- posthog-watcher-snapshot:([a-f0-9]{64}) -->/)?.[1];
+  return { hash, url: watcherComment.url };
+}
+
 // src/triage-schema.ts
 function parseTriageResult(text) {
   const raw = JSON.parse(extractJson(text));
@@ -27095,6 +27250,10 @@ async function processQueueItem(octokit, item, inputs) {
     commandMention: item.commandMention
   };
   info(`Draining queued ${item.kind} #${item.number} in ${item.mode} mode${item.command ? ` from ${item.command} command` : ""}.`);
+  if (item.kind === "issue-closed") {
+    await reconcileClosedIssuePullRequest(octokit, item.number, itemInputs);
+    return;
+  }
   if (item.kind === "pull_request") {
     if (item.mode !== "fix") {
       info(`Skipping queued PR #${item.number} in ${item.mode} mode; the queue only repairs PRs.`);
@@ -27119,6 +27278,7 @@ async function queuedCommandBody(octokit, item) {
   return comment?.body ?? void 0;
 }
 async function sweep(octokit, inputs) {
+  const closedStalePrs = (await reconcileWatcherPullRequests(octokit, inputs)).filter((result) => result.closed).length;
   const issueNumbers = await searchOpenIssueNumbers(octokit, inputs.sweepQuery, inputs.maxSweepItems);
   info(`Sweep found ${issueNumbers.length} open issue(s).`);
   const results = [];
@@ -27138,7 +27298,7 @@ async function sweep(octokit, inputs) {
       throw error2;
     }
   }
-  setOutput("conclusion", `swept ${results.length - skipped} issue(s), skipped ${skipped}`);
+  setOutput("conclusion", `swept ${results.length - skipped} issue(s), skipped ${skipped}, closed ${closedStalePrs} stale watcher PR(s)`);
   setOutput("triage-json", JSON.stringify(results));
 }
 async function processIssue(octokit, issueNumber, inputs, command, forcedCommentId) {
@@ -27453,7 +27613,7 @@ function runUrl3() {
 async function isWatcherPullRequest(octokit, pullNumber) {
   const { owner, repo } = context2.repo;
   const pull = await octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber });
-  return pull.data.head.repo?.full_name === `${owner}/${repo}` && pull.data.head.ref.startsWith("posthog-watcher/");
+  return isOwnWatcherPullRequestHead({ ref: pull.data.head.ref, repoFullName: pull.data.head.repo?.full_name });
 }
 function isPullRequestPayload() {
   const payload = context2.payload;
